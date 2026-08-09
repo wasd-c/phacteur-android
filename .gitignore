@@ -1,0 +1,53 @@
+# Gradle and Kotlin caches
+.gradle/
+.kotlin/
+build/
+**/build/
+
+# Local Android SDK and IDE state
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Firebase configuration and server credentials
+app/google-services.json
+google-services.json
+firebase-service-account*.json
+google-application-credentials*.json
+service-account*.json
+firebase-adminsdk*.json
+credentials*.json
+
+# Signing material
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+keystore.properties
+signing.properties
+secrets.properties
+key.properties
+*.cer
+*.crt
+*.der
+*.idsig
+*.hprof
+
+# Packaged artifacts are distributed through GitHub Releases
+*.apk
+*.aab
+mapping.txt
+
+# Local environment and OS/editor files
+.env*
+!.env.example
+.DS_Store
+*.log
+*.swp
+*.swo
+*~

@@ -1,0 +1,345 @@
+package app.phacteur.android.data
+
+import android.net.Uri
+import app.phacteur.android.BuildConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+
+class ApiException(
+    val statusCode: Int,
+    override val message: String,
+) : IOException(message)
+
+class PhacteurApi(
+    private val cookieStore: SessionCookieStore,
+    baseUrl: String = BuildConfig.PHACTEUR_BASE_URL,
+) {
+    private val baseUrl = URL(baseUrl)
+    private val webOrigin = buildString {
+        append(this@PhacteurApi.baseUrl.protocol)
+        append("://")
+        append(this@PhacteurApi.baseUrl.authority)
+    }
+
+    suspend fun me(): User = requestObject("api/auth/me").getJSONObject("user").let(::parseUser)
+
+    suspend fun logout() {
+        runCatching { requestObject("api/auth/logout", method = "POST") }
+        cookieStore.clear()
+    }
+
+    suspend fun passkeyAuthenticationOptions(): String =
+        requestText("api/auth/passkeys/authenticate/options", method = "POST")
+
+    suspend fun verifyPasskeyAuthentication(authenticationResponseJson: String): User =
+        requestObject(
+            path = "api/auth/passkeys/authenticate/verify",
+            method = "POST",
+            rawJsonBody = authenticationResponseJson,
+        ).getJSONObject("user").let(::parseUser)
+
+    suspend fun passkeyRegistrationOptions(): String =
+        requestText("api/auth/passkeys/register/options", method = "POST")
+
+    suspend fun verifyPasskeyRegistration(name: String, registrationResponseJson: String): Passkey {
+        val responseObject = JSONObject(registrationResponseJson)
+        val payload = JSONObject().put("name", name).put("response", responseObject)
+        val passkey = requestObject(
+            path = "api/auth/passkeys/register/verify",
+            method = "POST",
+            jsonBody = payload,
+        ).getJSONObject("passkey")
+        return parsePasskey(passkey)
+    }
+
+    suspend fun exchangeMobileGrant(
+        code: String,
+        codeVerifier: String,
+        clientId: String,
+        redirectUri: String,
+    ): User = requestObject(
+        path = "api/mobile-auth/exchange",
+        method = "POST",
+        jsonBody = JSONObject()
+            .put("code", code)
+            .put("codeVerifier", codeVerifier)
+            .put("clientId", clientId)
+            .put("redirectUri", redirectUri),
+    ).getJSONObject("user").let(::parseUser)
+
+    suspend fun emails(
+        status: String? = null,
+        search: String = "",
+        page: Int = 1,
+        limit: Int = 50,
+    ): MailboxPage {
+        val query = Uri.Builder()
+            .appendQueryParameter("page", page.toString())
+            .appendQueryParameter("limit", limit.toString())
+            .apply {
+                status?.let { appendQueryParameter("status", it) }
+                search.trim().takeIf(String::isNotBlank)?.let { appendQueryParameter("search", it) }
+            }
+            .build()
+            .encodedQuery
+        val response = requestObject("api/emails?$query")
+        val pagination = response.getJSONObject("pagination")
+        return MailboxPage(
+            emails = response.getJSONArray("emails").objectList().map(::parseEmail),
+            page = pagination.optInt("page", page),
+            totalPages = pagination.optInt("totalPages", 1),
+            hasMore = pagination.optBoolean("hasMore"),
+        )
+    }
+
+    suspend fun email(emailId: Int): MailboxEmail {
+        require(emailId > 0) { "L’identifiant de l’email doit être positif" }
+        return requestObject("api/mobile/emails/$emailId")
+            .getJSONObject("email")
+            .let(::parseEmail)
+    }
+
+    suspend fun updateEmailStatus(emailId: Int, status: String) {
+        requestObject(
+            path = "api/emails",
+            method = "PATCH",
+            jsonBody = JSONObject().put("emailIds", JSONArray().put(emailId)).put("status", status),
+        )
+    }
+
+    suspend fun threads(): List<MailThread> = requestObject("api/threads")
+        .getJSONArray("threads")
+        .objectList()
+        .map(::parseThread)
+
+    suspend fun threadMessages(threadId: String): List<ThreadMessage> =
+        requestObject("api/threads/${pathSegment(threadId)}/messages")
+            .getJSONArray("messages")
+            .objectList()
+            .map(::parseThreadMessage)
+
+    suspend fun markThreadRead(threadId: String, unread: Boolean) {
+        requestObject(
+            path = "api/threads/${pathSegment(threadId)}/read",
+            method = "PATCH",
+            jsonBody = JSONObject().put("hasUnread", unread),
+        )
+    }
+
+    suspend fun starThread(threadId: String, starred: Boolean) {
+        requestObject(
+            path = "api/threads/${pathSegment(threadId)}/star",
+            method = "PATCH",
+            jsonBody = JSONObject().put("isStarred", starred),
+        )
+    }
+
+    suspend fun archiveThread(threadId: String) {
+        requestObject(
+            path = "api/threads/${pathSegment(threadId)}",
+            method = "PATCH",
+            jsonBody = JSONObject().put("status", "ARCHIVED"),
+        )
+    }
+
+    suspend fun contacts(search: String = ""): List<Contact> {
+        val query = search.trim().takeIf(String::isNotBlank)?.let {
+            "?search=${Uri.encode(it)}"
+        }.orEmpty()
+        return requestObject("api/contacts$query")
+            .getJSONArray("contacts")
+            .objectList()
+            .map(::parseContact)
+    }
+
+    suspend fun dashboard(): Dashboard {
+        val response = requestObject("api/dashboard")
+        val counts = response.getJSONObject("counts")
+        return Dashboard(
+            counts = DashboardCounts(
+                emails = counts.optInt("emails"),
+                unread = counts.optInt("unread"),
+                conversations = counts.optInt("conversations"),
+                contacts = counts.optInt("contacts"),
+            ),
+            recentEmails = response.getJSONArray("recentEmails").objectList().map { recent ->
+                MailboxEmail(
+                    id = recent.getInt("id"),
+                    sender = recent.optString("sender"),
+                    senderName = recent.optionalString("senderName"),
+                    subject = recent.optString("subject", "(Sans objet)"),
+                    body = recent.optString("preview"),
+                    emailAccountId = null,
+                    receivedAt = recent.optString("receivedAt"),
+                    status = recent.optString("status", "READ"),
+                    hasAttachments = recent.optBoolean("hasAttachments"),
+                    threadId = null,
+                    isStarred = false,
+                    attachments = emptyList(),
+                )
+            },
+            accounts = response.getJSONArray("accounts").objectList().map { account ->
+                EmailAccount(
+                    id = account.getInt("id"),
+                    email = account.optString("email"),
+                    provider = account.optString("provider"),
+                    isPrimary = false,
+                    isActive = account.optBoolean("isActive"),
+                    canSend = account.optBoolean("isActive"),
+                    syncStatus = account.optString("syncStatus", "IDLE"),
+                )
+            },
+        )
+    }
+
+    suspend fun emailAccounts(): List<EmailAccount> = requestObject("api/email-accounts")
+        .getJSONArray("emailAccounts")
+        .objectList()
+        .map(::parseEmailAccount)
+
+    suspend fun passkeys(): List<Passkey> = requestObject("api/user/passkeys")
+        .getJSONArray("passkeys")
+        .objectList()
+        .map(::parsePasskey)
+
+    suspend fun sendMessage(
+        accountId: Int,
+        recipients: List<String>,
+        subject: String,
+        body: String,
+        threadId: String? = null,
+    ) {
+        val payload = JSONObject()
+            .put("emailAccountId", accountId)
+            .put("recipients", JSONArray(recipients))
+            .put("subject", subject)
+            .put("body", body)
+        threadId?.let { payload.put("threadId", it) }
+        requestObject("api/compose", method = "POST", jsonBody = payload)
+    }
+
+    suspend fun registerPushInstallation(fid: String, deviceName: String, appVersion: String) {
+        requestObject(
+            path = "api/mobile/push-registrations",
+            method = "PUT",
+            jsonBody = JSONObject()
+                .put("firebaseInstallationId", fid)
+                .put("deviceName", deviceName)
+                .put("appVersion", appVersion),
+        )
+    }
+
+    suspend fun deletePushInstallation(fid: String) {
+        requestObject(
+            path = "api/mobile/push-registrations",
+            method = "DELETE",
+            jsonBody = JSONObject().put("firebaseInstallationId", fid),
+        )
+    }
+
+    suspend fun notificationCursor(afterId: Int, limit: Int = 100): NotificationCursorPage {
+        val response = requestObject("api/mobile/email-notifications?afterId=$afterId&limit=$limit")
+        return NotificationCursorPage(
+            emails = response.optJSONArray("emails")?.objectList()?.map { value ->
+                NotificationCursorItem(
+                    id = value.getInt("id"),
+                    threadId = value.optionalString("threadId"),
+                    receivedAt = value.optString("receivedAt"),
+                )
+            }.orEmpty(),
+            hasMore = response.optBoolean("hasMore"),
+            latestEmailId = response.optInt("latestEmailId"),
+            nextAfterId = response.optInt("nextAfterId", afterId),
+        )
+    }
+
+    fun hasSession(): Boolean = cookieStore.hasSession()
+
+    private suspend fun requestObject(
+        path: String,
+        method: String = "GET",
+        jsonBody: JSONObject? = null,
+        rawJsonBody: String? = null,
+    ): JSONObject {
+        val text = requestText(path, method, jsonBody?.toString() ?: rawJsonBody)
+        return if (text.isBlank()) JSONObject() else try {
+            JSONObject(text)
+        } catch (error: JSONException) {
+            throw IOException("Réponse serveur invalide", error)
+        }
+    }
+
+    private suspend fun requestText(
+        path: String,
+        method: String = "GET",
+        rawJsonBody: String? = null,
+    ): String = withContext(Dispatchers.IO) {
+        val target = URL(baseUrl, path)
+        require(
+            target.protocol == baseUrl.protocol &&
+                target.host == baseUrl.host &&
+                target.port == baseUrl.port
+        ) {
+            "La requête doit rester sur le serveur Phacteur configuré"
+        }
+
+        val connection = (target.openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            instanceFollowRedirects = false
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Origin", webOrigin)
+            setRequestProperty("User-Agent", "Phacteur-Android/${BuildConfig.VERSION_NAME}")
+            cookieStore.cookieHeader()?.let { setRequestProperty("Cookie", it) }
+            if (rawJsonBody != null) {
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            }
+        }
+
+        try {
+            if (rawJsonBody != null) {
+                connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(rawJsonBody) }
+            }
+            val status = connection.responseCode
+            val setCookies = connection.headerFields.entries
+                .filter { (name, _) -> name?.equals("Set-Cookie", ignoreCase = true) == true }
+                .flatMap { it.value.orEmpty() }
+            cookieStore.update(setCookies)
+
+            val responseText = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader(Charsets.UTF_8)
+                ?.use { it.readText() }
+                .orEmpty()
+
+            if (status !in 200..299) {
+                val message = runCatching { JSONObject(responseText).optString("error") }
+                    .getOrNull()
+                    ?.takeIf(String::isNotBlank)
+                    ?: "Le serveur a refusé la requête ($status)"
+                throw ApiException(status, message)
+            }
+            responseText
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun pathSegment(value: String): String = Uri.encode(value)
+
+    private fun parsePasskey(value: JSONObject) = Passkey(
+        id = value.getString("id"),
+        name = value.optString("name", "Passkey"),
+        deviceType = value.optString("deviceType"),
+        backedUp = value.optBoolean("backedUp"),
+        createdAt = value.optString("createdAt"),
+        lastUsedAt = value.optionalString("lastUsedAt"),
+    )
+}
