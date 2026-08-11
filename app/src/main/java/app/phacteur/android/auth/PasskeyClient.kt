@@ -10,8 +10,8 @@ import androidx.credentials.PublicKeyCredential
 import androidx.credentials.exceptions.CreateCredentialException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.GetCredentialUnsupportedException
-import androidx.credentials.exceptions.GetPublicKeyCredentialException
 import androidx.credentials.exceptions.NoCredentialException
+import androidx.credentials.exceptions.publickeycredential.GetPublicKeyCredentialException
 import app.phacteur.android.data.Passkey
 import app.phacteur.android.data.ApiException
 import app.phacteur.android.data.PhacteurApi
