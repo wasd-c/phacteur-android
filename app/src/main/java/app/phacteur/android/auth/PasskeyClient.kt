@@ -79,8 +79,6 @@ class PasskeyClient(private val api: PhacteurApi) {
     private fun passkeyErrorMessage(action: String, error: Throwable): String = when {
         error is ApiException && error.message?.contains("not supported by this app", ignoreCase = true) == true ->
             "Les passkeys ne sont pas activées pour cette version de l’application. Ouvrez le site web pour continuer."
-        error is GetPublicKeyCredentialException ->
-            "La vérification par passkey a échoué avec ce gestionnaire d’identifiants"
         error is CreateCredentialException ->
             "L’enregistrement par passkey n’est pas pris en charge par ce terminal"
         else ->

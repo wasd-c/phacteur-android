@@ -42,6 +42,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
+        multiDexEnabled = true
 
         buildConfigField("String", "PHACTEUR_BASE_URL", "\"$baseUrl\"")
         buildConfigField("String", "MOBILE_AUTH_CLIENT_ID", "\"phacteur-android\"")
@@ -64,7 +65,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
     buildFeatures {
         buildConfig = true
         compose = true

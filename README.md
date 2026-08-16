@@ -105,27 +105,34 @@ screen, but cannot provide a functional mailbox session.
 ## Passkey association
 
 Credential Manager requires the installed APK's signing identity to be linked
-to `phacteur.app`. Obtain the SHA-256 fingerprints for every accepted release
-identity (including the Play App Signing certificate when Play re-signs the
-APK), then configure all three values together:
+to `phacteur.app`. The Android manifest loads the website statement from
+`https://phacteur.app/.well-known/assetlinks.json`. The website must return that
+file directly with HTTP 200 and `Content-Type: application/json`; redirects and
+HTML error pages fail verification.
+
+The Digital Asset Links payload for the current debug-preview signing
+certificate is checked in at [`.well-known/assetlinks.json`](.well-known/assetlinks.json).
+Configure the backend with the matching values:
 
 ```env
 ANDROID_APP_PACKAGE_NAME="app.phacteur.android"
-ANDROID_APP_SHA256_CERT_FINGERPRINTS="AA:BB:..."
-WEBAUTHN_ANDROID_ORIGINS="android:apk-key-hash:<unpadded-base64url-sha256>"
+ANDROID_APP_SHA256_CERT_FINGERPRINTS="17:25:C1:99:60:70:E0:C9:32:31:88:24:A7:E9:81:61:AD:AA:C5:FA:20:A2:67:07:B2:9E:AE:91:3F:F3:EA:62"
+WEBAUTHN_ANDROID_ORIGINS="android:apk-key-hash:FyXBmWBw4MkyMYgkp-mBYa2qxfogomcHsp6ukT_z6mI"
 ```
 
 The server derives and cross-checks the origins, and publishes
-`/.well-known/assetlinks.json`. A missing or inconsistent configuration fails
-closed. Verify the deployed file before testing a passkey:
+`/.well-known/assetlinks.json`. Deploy the checked-in payload through the web
+application if the backend does not generate it. A missing or inconsistent
+configuration fails closed. Verify the deployed file before testing a passkey:
 
 ```bash
 curl --fail --show-error https://phacteur.app/.well-known/assetlinks.json
 ```
 
 Use `./gradlew signingReport` for local signing diagnostics. Debug and release
-certificates have different fingerprints; production must use the certificate
-that signs the installed build.
+certificates have different fingerprints. Replace the checked-in preview
+fingerprint and backend values when a production signing identity or Play App
+Signing certificate is introduced.
 
 ## End-to-end release checks
 
