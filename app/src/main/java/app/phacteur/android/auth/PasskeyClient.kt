@@ -8,9 +8,8 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.GetPublicKeyCredentialOption
 import androidx.credentials.PublicKeyCredential
 import androidx.credentials.exceptions.CreateCredentialException
+import androidx.credentials.exceptions.CreateCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
-import androidx.credentials.exceptions.GetCredentialUnsupportedException
-import androidx.credentials.exceptions.NoCredentialException
 import androidx.credentials.exceptions.publickeycredential.GetPublicKeyCredentialException
 import app.phacteur.android.data.Passkey
 import app.phacteur.android.data.ApiException
@@ -29,12 +28,8 @@ class PasskeyClient(private val api: PhacteurApi) {
                 .getCredential(context = activity, request = request)
                 .credential as? PublicKeyCredential
                 ?: error("Le gestionnaire d’identifiants n’a pas renvoyé de passkey")
-        } catch (_: NoCredentialException) {
-            error("Aucune passkey Phacteur n’est disponible sur cet appareil")
-        } catch (_: GetCredentialUnsupportedException) {
-            error("Le gestionnaire d’identifiants ne prend pas en charge les passkeys sur ce téléphone")
-        } catch (_: GetCredentialException) {
-            error("Échec de la connexion par passkey")
+        } catch (error: GetCredentialException) {
+            throw passkeySignInFailure(error)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             error(
@@ -60,6 +55,8 @@ class PasskeyClient(private val api: PhacteurApi) {
                 request = CreatePublicKeyCredentialRequest(requestJson = optionsJson),
             ) as? CreatePublicKeyCredentialResponse
                 ?: error("Le gestionnaire d’identifiants n’a pas créé de passkey")
+        } catch (error: CreateCredentialCancellationException) {
+            throw CancellationException("Création de la clé d’accès annulée", error)
         } catch (_: CreateCredentialException) {
             error("Impossible d’enregistrer une passkey sur ce téléphone")
         } catch (_: GetCredentialException) {

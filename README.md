@@ -12,9 +12,12 @@ this source tree.
 ## Release status
 
 The downloadable APK is a debug preview for sideload testing on Android 9 and
-newer. It is debug-signed, is not a Play Store or production build, and cannot
-receive Firebase notifications until a real Firebase configuration is supplied
-in a new build. A later production-signed build may require uninstalling this
+newer. It is debug-signed and is not a Play Store or production build. Version
+1.0.1 (build 2) supports opt-in background email checks without Firebase, provided
+the mobile backend endpoints below are deployed. Android schedules these checks
+roughly every 15 minutes and may delay them further to save battery. Instant
+Firebase notifications still require a real Firebase configuration in a new
+build. A later production-signed build may require uninstalling this
 debug APK before installation.
 
 ## Included
@@ -23,7 +26,8 @@ debug APK before installation.
   contacts, account settings, and message composition;
 - browser sign-in bridge with a five-minute, one-use PKCE grant and encrypted
   `user-session` cookie storage;
-- native Credential Manager passkey sign-in and passkey enrollment;
+- native Credential Manager passkey sign-in and passkey enrollment, with a
+  browser sign-in action after provider rejection (cancellation remains silent);
 - privacy-safe FCM data notifications and a WorkManager catch-up path;
 - exact notification deep links that reload a user-owned email by ID;
 - Android Keystore-backed encryption for the session, passkey challenge
@@ -54,6 +58,11 @@ default is `https://phacteur.app/`.
 
 ## Firebase setup
 
+Firebase client support is included, but instant delivery also requires a
+server-side push-registration and sending integration. The backend deployed for
+1.0.1 supports browser sign-in and periodic email checks; it does not yet provide
+the Firebase push-registration endpoints.
+
 1. Add an Android application with package `app.phacteur.android` to the
    Phacteur Firebase project.
 2. Download its `google-services.json` to `app/google-services.json`.
@@ -65,14 +74,21 @@ default is `https://phacteur.app/`.
    `ANDROID_APP_PACKAGE_NAME=app.phacteur.android`. Put the service-account JSON
    outside both repositories and inject it through the backend deployment's
    secret-management mechanism.
-4. Apply the backend push-registration migration before registering a device.
+4. Implement and deploy the backend push-registration and sending integration,
+   including its database migration, before registering a device.
 
-Notifications are opt-in in the app. Firebase receives only `new_email`, the
-email ID, and the thread ID—not sender, subject, or body. The first catch-up run
+Notifications are offered once after sign-in and can also be enabled in
+Settings. Android's app and channel permissions must allow them; Settings links
+to the system notification controls when blocked. Without Firebase, the same
+WorkManager catch-up runs independently. Its cursor advances only after Android
+accepts the notification, so denied permission does not discard pending mail.
+
+The Firebase client expects only `new_email`, the email ID, and the thread ID,
+without sender, subject, or body. The first catch-up run
 records a high-water mark instead of replaying old unread messages. Logging out,
 session expiry, or disabling notifications unregisters the installation and
-clears the local cursor. The backend also stops targeting registrations that an
-authenticated app session has not refreshed for seven days.
+clears the local cursor. Firebase-enabled builds also request removal of the
+server registration when one exists.
 
 ## Browser sign-in
 
@@ -82,7 +98,7 @@ Production must include this exact callback:
 MOBILE_AUTH_REDIRECT_URIS="phacteur://auth/callback"
 ```
 
-The browser completes the site's normal password, Turnstile, and 2FA flow,
+The browser completes the site's sign-in flow,
 then asks for explicit approval before returning a one-use code to the app.
 The app verifies `state` and exchanges the code with its PKCE verifier.
 
@@ -92,7 +108,7 @@ The client expects the production Phacteur API contract, including the
 following mobile endpoints:
 
 - `POST /api/mobile-auth/authorize` and `POST /api/mobile-auth/exchange`;
-- `PUT` and `DELETE /api/mobile/push-registrations`;
+- `PUT` and `DELETE /api/mobile/push-registrations` for Firebase-enabled builds;
 - `GET /api/mobile/email-notifications` and `GET /api/mobile/emails/{id}`;
 - the existing authenticated mailbox, thread, contact, dashboard, send, and
   passkey endpoints used by the web application.
@@ -101,6 +117,13 @@ Authentication uses the backend's HTTP-only `user-session` cookie. The app does
 not embed an API key, OAuth client secret, Firebase service account, or signing
 key. A source build without server compatibility can compile and show the login
 screen, but cannot provide a functional mailbox session.
+
+Before distributing an APK, check the actual deployed server: `/mobile-auth`
+with valid PKCE parameters must show sign-in/consent, and unauthenticated
+`/api/mobile/email-notifications` must return JSON 401 instead of HTML 404.
+A checked-in Android client or `assetlinks.json` alone does not implement these
+server routes. Passkey verification must also explicitly accept the configured
+Android certificate origins, in addition to the website origin.
 
 ## Passkey association
 
@@ -134,6 +157,12 @@ certificates have different fingerprints. Replace the checked-in preview
 fingerprint and backend values when a production signing identity or Play App
 Signing certificate is introduced.
 
+Bitwarden also verifies the `delegate_permission/common.handle_all_urls`
+relation through Google's Digital Asset Links service. Verify both relations
+against the actual installed APK certificate; a different local debug key needs
+its own explicit association. Version and build number appear on the login and
+Settings screens to distinguish APK updates.
+
 ## End-to-end release checks
 
 - Browser login returns to the app and survives an app restart.
@@ -146,7 +175,8 @@ Signing certificate is introduced.
 - Send, reply, read/unread, archive, thread star/archive, search, pagination,
   and tablet split views work against production-like data.
 
-The repository build verifies compilation, lint, and the PKCE protocol unit
-tests. Firebase delivery, Digital Asset Links, release signing, and an inbound
-email require the external project credentials and a signed physical-device
-build.
+The repository build verifies compilation, lint, the PKCE protocol, and passkey
+provider rejection/cancellation handling. Firebase delivery requires the external
+project configuration and server integration. Passkey sign-in and actual email
+notifications still need verification on a signed physical-device build; periodic
+email checks do not require Firebase credentials.

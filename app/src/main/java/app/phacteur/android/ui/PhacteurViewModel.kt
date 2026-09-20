@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.phacteur.android.auth.MobileAuthManager
 import app.phacteur.android.auth.PasskeyClient
+import app.phacteur.android.auth.PasskeySignInUnavailableException
 import app.phacteur.android.data.ApiException
 import app.phacteur.android.data.AppGraph
 import app.phacteur.android.data.Contact
@@ -69,6 +70,7 @@ data class PhacteurUiState(
     val notificationsEnabled: Boolean = false,
     val firebaseConfigured: Boolean = false,
     val canRetrySession: Boolean = false,
+    val preferBrowserSignIn: Boolean = false,
 )
 
 class PhacteurViewModel(application: Application) : AndroidViewModel(application) {
@@ -106,8 +108,14 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
 
     fun signInWithPasskey(activity: ComponentActivity) = launchAction(authenticating = true) {
         authMutex.withLock {
-            val user = passkeyClient.signIn(activity)
-            onAuthenticated(user)
+            _state.update { it.copy(preferBrowserSignIn = false) }
+            try {
+                val user = passkeyClient.signIn(activity)
+                onAuthenticated(user)
+            } catch (error: PasskeySignInUnavailableException) {
+                _state.update { it.copy(preferBrowserSignIn = true) }
+                throw error
+            }
         }
     }
 
@@ -293,8 +301,7 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
 
     fun setNotificationsEnabled(enabled: Boolean) = launchAction {
         if (enabled) {
-            val configured = PushRegistrationManager.enable(getApplication())
-            if (!configured) error("Ajoutez google-services.json pour activer Firebase Cloud Messaging")
+            PushRegistrationManager.enable(getApplication())
         } else {
             PushRegistrationManager.disable(getApplication())
         }
@@ -304,6 +311,10 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
                 firebaseConfigured = PushRegistrationManager.isFirebaseConfigured(getApplication()),
             )
         }
+    }
+
+    fun refreshNotificationDelivery() {
+        if (_state.value.user != null) PushRegistrationManager.refreshAfterLogin(getApplication())
     }
 
     fun logout() = launchAction {

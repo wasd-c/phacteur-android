@@ -17,7 +17,7 @@ class PhacteurMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         if (!NotificationPreferences(applicationContext).enabled) return
         if (message.data["type"] != "new_email") return
-        val emailId = message.data["emailId"]?.toIntOrNull() ?: return
+        val emailId = message.data["emailId"]?.toIntOrNull()?.takeIf { it > 0 } ?: return
         NotificationHelper.showNewEmail(
             context = applicationContext,
             emailId = emailId,

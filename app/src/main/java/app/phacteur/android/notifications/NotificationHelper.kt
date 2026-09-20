@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -29,13 +30,23 @@ object NotificationHelper {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    fun showNewEmail(context: Context, emailId: Int, threadId: String?) {
-        if (!NotificationPreferences(context).enabled) return
-        NotificationPreferences(context).markSeen(emailId)
+    fun canShowNotifications(context: Context): Boolean {
         if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
-        ) return
+        ) return false
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
+        val channel = context.getSystemService(NotificationManager::class.java)
+            .getNotificationChannel(CHANNEL_ID)
+        return channel?.importance != NotificationManager.IMPORTANCE_NONE
+    }
+
+    @Synchronized
+    fun showNewEmail(context: Context, emailId: Int, threadId: String?): Boolean {
+        val preferences = NotificationPreferences(context)
+        if (!preferences.enabled || emailId <= 0) return false
+        if (!canShowNotifications(context)) return false
 
         val intent = Intent(context, NotificationOpenActivity::class.java).apply {
             putExtra(EXTRA_EMAIL_ID, emailId)
@@ -55,9 +66,18 @@ object NotificationHelper {
             .setCategory(NotificationCompat.CATEGORY_EMAIL)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
             .setGroup("phacteur-email")
             .build()
-        NotificationManagerCompat.from(context).notify(emailId, notification)
+        try {
+            NotificationManagerCompat.from(context).notify(emailId, notification)
+        } catch (_: SecurityException) {
+            // The permission may have changed since the check above. Keep the cursor
+            // so the catch-up worker can deliver this message after permission returns.
+            return false
+        }
+        preferences.markSeen(emailId)
+        return true
     }
 }

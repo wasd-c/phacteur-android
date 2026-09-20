@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,17 +40,26 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import app.phacteur.android.BuildConfig
+import app.phacteur.android.notifications.NotificationHelper
+import app.phacteur.android.notifications.NotificationPreferences
 import app.phacteur.android.ui.screens.AuthScreen
 import app.phacteur.android.ui.screens.ComposeSheet
 import app.phacteur.android.ui.screens.ContactsScreen
@@ -56,6 +67,7 @@ import app.phacteur.android.ui.screens.ConversationsScreen
 import app.phacteur.android.ui.screens.DashboardScreen
 import app.phacteur.android.ui.screens.MailboxScreen
 import app.phacteur.android.ui.screens.SettingsScreen
+import kotlinx.coroutines.launch
 
 private data class NavigationItem(
     val destination: Destination,
@@ -81,13 +93,51 @@ fun PhacteurApp(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val notificationPreferences = remember(context) { NotificationPreferences(context) }
+    var showNotificationPrompt by rememberSaveable {
+        mutableStateOf(!notificationPreferences.promptHandled && !notificationPreferences.enabled)
+    }
+    var notificationsAllowed by remember { mutableStateOf(NotificationHelper.canShowNotifications(context)) }
+    val openNotificationSettings = {
+        context.startActivity(
+            Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName),
+        )
+    }
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) viewModel.setNotificationsEnabled(true)
+        notificationsAllowed = NotificationHelper.canShowNotifications(context)
+        if (granted) {
+            viewModel.setNotificationsEnabled(true)
+        } else {
+            scope.launch {
+                snackbar.showSnackbar("Notifications refusées. Vous pouvez les autoriser dans les réglages Android.")
+            }
+        }
+    }
+    val enableNotifications = {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.setNotificationsEnabled(true)
+            if (!NotificationHelper.canShowNotifications(context)) openNotificationSettings()
+        }
     }
 
-    LaunchedEffect(state.error, state.message) {
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        notificationsAllowed = NotificationHelper.canShowNotifications(context)
+        viewModel.refreshNotificationDelivery()
+    }
+
+    LaunchedEffect(state.user, state.error, state.message) {
+        // The login screen displays persistent errors and has no SnackbarHost.
+        if (state.user == null) return@LaunchedEffect
         (state.error ?: state.message)?.let { snackbar.showSnackbar(it) }
         if (state.error != null || state.message != null) viewModel.clearTransientMessage()
     }
@@ -97,6 +147,7 @@ fun PhacteurApp(
             loading = state.authenticating,
             error = state.error,
             canRetrySession = state.canRetrySession,
+            preferBrowserSignIn = state.preferBrowserSignIn,
             onPasskey = { viewModel.signInWithPasskey(activity) },
             onRetrySession = viewModel::retrySession,
             onBrowserSignIn = {
@@ -105,6 +156,35 @@ fun PhacteurApp(
             modifier = modifier,
         )
         return
+    }
+
+    if (showNotificationPrompt) {
+        val dismissPrompt = {
+            notificationPreferences.promptHandled = true
+            showNotificationPrompt = false
+        }
+        AlertDialog(
+            onDismissRequest = dismissPrompt,
+            title = { Text("Recevoir les nouveaux emails") },
+            text = {
+                Text(
+                    if (state.firebaseConfigured) {
+                        "Activez les notifications pour être prévenu lorsqu’un email arrive, même lorsque Phacteur est fermé. Le contenu du message reste privé."
+                    } else {
+                        "Phacteur peut vérifier vos nouveaux emails en arrière-plan et vous prévenir, avec un délai d’environ 15 minutes ou plus selon Android. Le contenu du message reste privé."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    dismissPrompt()
+                    enableNotifications()
+                }) { Text("Activer") }
+            },
+            dismissButton = {
+                TextButton(onClick = dismissPrompt) { Text("Plus tard") }
+            },
+        )
     }
 
     BackHandler(enabled = state.composeDraft != null) { viewModel.closeCompose() }
@@ -238,15 +318,13 @@ fun PhacteurApp(
                             passkeys = state.passkeys,
                             notificationsEnabled = state.notificationsEnabled,
                             firebaseConfigured = state.firebaseConfigured,
+                            notificationsAllowed = notificationsAllowed,
+                            onOpenNotificationSettings = openNotificationSettings,
                             onNotificationChange = { enabled ->
-                                if (
-                                    enabled && Build.VERSION.SDK_INT >= 33 &&
-                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-                                    PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                if (enabled) {
+                                    enableNotifications()
                                 } else {
-                                    viewModel.setNotificationsEnabled(enabled)
+                                    viewModel.setNotificationsEnabled(false)
                                 }
                             },
                             onAddPasskey = { viewModel.registerPasskey(activity) },

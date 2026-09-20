@@ -1,6 +1,8 @@
 package app.phacteur.android.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,12 +39,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import app.phacteur.android.BuildConfig
 
 @Composable
 fun AuthScreen(
     loading: Boolean,
     error: String?,
     canRetrySession: Boolean,
+    preferBrowserSignIn: Boolean,
     onPasskey: () -> Unit,
     onRetrySession: () -> Unit,
     onBrowserSignIn: () -> Unit,
@@ -55,7 +59,8 @@ fun AuthScreen(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Surface(
@@ -108,7 +113,7 @@ fun AuthScreen(
                     }
                     Spacer(Modifier.height(24.dp))
                     Button(
-                        onClick = onPasskey,
+                        onClick = if (preferBrowserSignIn) onBrowserSignIn else onPasskey,
                         enabled = !loading,
                         modifier = Modifier.fillMaxWidth().height(54.dp),
                         shape = RoundedCornerShape(16.dp),
@@ -120,10 +125,16 @@ fun AuthScreen(
                                 color = MaterialTheme.colorScheme.onPrimary,
                             )
                         } else {
-                            Icon(Icons.Outlined.Fingerprint, contentDescription = null)
+                            Icon(
+                                if (preferBrowserSignIn) Icons.Outlined.Language else Icons.Outlined.Fingerprint,
+                                contentDescription = null,
+                            )
                         }
                         Spacer(Modifier.width(10.dp))
-                        Text("Continuer avec une passkey", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (preferBrowserSignIn) "Continuer sur le site" else "Continuer avec une passkey",
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
@@ -139,14 +150,17 @@ fun AuthScreen(
                         HorizontalDivider(Modifier.weight(1f))
                     }
                     OutlinedButton(
-                        onClick = onBrowserSignIn,
+                        onClick = if (preferBrowserSignIn) onPasskey else onBrowserSignIn,
                         enabled = !loading,
                         modifier = Modifier.fillMaxWidth().height(54.dp),
                         shape = RoundedCornerShape(16.dp),
                     ) {
-                        Icon(Icons.Outlined.Language, contentDescription = null)
+                        Icon(
+                            if (preferBrowserSignIn) Icons.Outlined.Fingerprint else Icons.Outlined.Language,
+                            contentDescription = null,
+                        )
                         Spacer(Modifier.width(10.dp))
-                        Text("Se connecter sur le site")
+                        Text(if (preferBrowserSignIn) "Réessayer dans l’application" else "Se connecter sur le site")
                     }
                     if (canRetrySession) {
                         Spacer(Modifier.height(10.dp))
@@ -163,7 +177,7 @@ fun AuthScreen(
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Le site vérifie Turnstile et votre code 2FA, puis rend la main à l’app avec un code à usage unique.",
+                        "Utilisez votre clé d’accès sur phacteur.app, puis autorisez le retour dans l’application.",
                         modifier = Modifier.fillMaxWidth(),
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
@@ -185,6 +199,12 @@ fun AuthScreen(
                     textAlign = TextAlign.Center,
                 )
             }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

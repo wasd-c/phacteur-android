@@ -24,17 +24,20 @@ object PushRegistrationManager {
 
     fun isFirebaseConfigured(context: Context): Boolean = firebaseApp(context) != null
 
-    fun enable(context: Context): Boolean {
-        firebaseApp(context) ?: return false
+    fun enable(context: Context) {
         NotificationPreferences(context).enabled = true
-        FirebaseMessaging.getInstance().apply {
-            isAutoInitEnabled = true
-            register()
-        }
+        // Background catch-up must also work in builds without Firebase resources.
         scheduleInboxSync(context)
         enqueueInboxSync(context)
-        lastKnownFid(context)?.let { enqueueRegistration(context, it) }
-        return true
+        if (firebaseApp(context) != null) {
+            runCatching {
+                FirebaseMessaging.getInstance().apply {
+                    isAutoInitEnabled = true
+                    register()
+                }
+            }
+            lastKnownFid(context)?.let { enqueueRegistration(context, it) }
+        }
     }
 
     suspend fun disable(context: Context) {
@@ -48,9 +51,11 @@ object PushRegistrationManager {
         WorkManager.getInstance(context).cancelUniqueWork(INBOX_BASELINE_WORK)
         WorkManager.getInstance(context).cancelUniqueWork(INBOX_SYNC_WORK)
         firebaseApp(context)?.let {
-            FirebaseMessaging.getInstance().apply {
-                isAutoInitEnabled = false
-                unregister()
+            runCatching {
+                FirebaseMessaging.getInstance().apply {
+                    isAutoInitEnabled = false
+                    unregister()
+                }
             }
         }
         graph.secureStorage.remove(FID_KEY)
@@ -61,7 +66,7 @@ object PushRegistrationManager {
 
     fun refreshAfterLogin(context: Context) {
         if (!NotificationPreferences(context).enabled) return
-        lastKnownFid(context)?.let { enqueueRegistration(context, it) } ?: enable(context)
+        enable(context)
     }
 
     fun onRegistered(context: Context, fid: String) {

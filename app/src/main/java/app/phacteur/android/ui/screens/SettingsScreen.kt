@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.phacteur.android.data.EmailAccount
+import app.phacteur.android.BuildConfig
 import app.phacteur.android.data.Passkey
 import app.phacteur.android.data.User
 import app.phacteur.android.ui.components.formatTimestamp
@@ -54,7 +55,9 @@ fun SettingsScreen(
     passkeys: List<Passkey>,
     notificationsEnabled: Boolean,
     firebaseConfigured: Boolean,
+    notificationsAllowed: Boolean,
     onNotificationChange: (Boolean) -> Unit,
+    onOpenNotificationSettings: () -> Unit,
     onAddPasskey: () -> Unit,
     onOpenWeb: (String) -> Unit,
     onLogout: () -> Unit,
@@ -104,15 +107,15 @@ fun SettingsScreen(
                 icon = Icons.Outlined.Notifications,
                 title = "Nouveaux emails",
                 subtitle = when {
-                    !firebaseConfigured -> "Configuration Firebase requise"
-                    notificationsEnabled -> "Push FCM privé + synchronisation de secours"
+                    notificationsEnabled && !notificationsAllowed -> "Bloquées dans les réglages Android"
+                    notificationsEnabled && !firebaseConfigured -> "Vérification en arrière-plan activée"
+                    notificationsEnabled -> "Alertes activées sur cet appareil"
                     else -> "Désactivées sur cet appareil"
                 },
                 trailing = {
                     Switch(
                         checked = notificationsEnabled,
                         onCheckedChange = onNotificationChange,
-                        enabled = firebaseConfigured || notificationsEnabled,
                     )
                 },
             )
@@ -120,18 +123,29 @@ fun SettingsScreen(
         if (!firebaseConfigured) {
             item {
                 Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                        Icon(Icons.Outlined.CloudOff, contentDescription = null)
                         Text(
-                            "Ajoutez android/app/google-services.json pour enregistrer ce téléphone auprès de FCM.",
+                            "Cette version vérifie les nouveaux emails périodiquement, avec un délai d’environ 15 minutes ou plus selon Android. Les alertes instantanées ne sont pas disponibles dans cette version.",
                             modifier = Modifier.padding(start = 10.dp),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            }
+        }
+        if (!notificationsAllowed) {
+            item {
+                OutlinedButton(
+                    onClick = onOpenNotificationSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("Autoriser les notifications dans Android")
                 }
             }
         }
@@ -207,6 +221,13 @@ fun SettingsScreen(
                 Spacer(Modifier.width(8.dp))
                 Text("Se déconnecter")
             }
+        }
+        item {
+            Text(
+                "Phacteur ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         item { Spacer(Modifier.height(24.dp)) }
     }
