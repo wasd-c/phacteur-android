@@ -1,6 +1,7 @@
 package app.phacteur.android.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -9,6 +10,31 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class EmailParsingTest {
+    @Test
+    fun groupedMailboxPayloadRetainsValidCopiesAndLegacyDetailsStaySingle() {
+        val grouped = parseEmail(
+            JSONObject().put("id", 42).put("duplicateCount", 3)
+                .put("duplicateIds", JSONArray().put(42).put(41).put(43).put(41).put(0).put(JSONObject.NULL).put(2_147_483_648L)),
+        )
+        val detail = parseEmail(JSONObject().put("id", 42))
+
+        assertEquals(listOf(42, 41, 43), grouped.statusUpdateIds)
+        assertEquals(3, grouped.duplicateCount)
+        assertEquals(listOf(42), detail.statusUpdateIds)
+        assertEquals(1, detail.duplicateCount)
+    }
+
+    @Test
+    fun threadReplyKeepsItsNestedMailboxAndSupportsOlderFlatMetadata() {
+        val nested = JSONObject().put("id", 42).put("emailAccount", JSONObject().put("id", 7))
+        val flat = JSONObject().put("id", 43).put("emailAccountId", 8)
+
+        assertEquals(7, parseThreadMessage(nested).emailAccountId)
+        assertEquals(7, parseEmail(nested).emailAccountId)
+        assertEquals(8, parseThreadMessage(flat).emailAccountId)
+        assertEquals(8, parseEmail(flat).emailAccountId)
+    }
+
     @Test
     fun mailboxKeepsHtmlAlongsidePlainText() {
         val html = "<table><tr><td><strong>Bonjour</strong> &amp; bienvenue</td></tr></table>"

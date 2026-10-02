@@ -96,6 +96,36 @@ class MailboxStateTest {
         assertTrue(state.mailboxHasMore)
     }
 
+    @Test
+    fun `reading duplicate copies updates a different representative and the open source mail`() {
+        val collapsed = email("UNREAD").copy(duplicateIds = listOf(10, 11), duplicateCount = 2)
+        val unrelated = email("UNREAD").copy(id = 20)
+        val source = email("UNREAD").copy(id = 11)
+        val state = PhacteurUiState(
+            emails = listOf(collapsed, unrelated), selectedEmail = source, mailboxTotalCount = 2,
+        ).applyEmailStatus(listOf(11), "READ", closeAfter = false)
+
+        assertEquals("READ", state.emails.first().status)
+        assertEquals("UNREAD", state.emails.last().status)
+        assertEquals("READ", state.selectedEmail?.status)
+        assertEquals(2, state.mailboxTotalCount)
+    }
+
+    @Test
+    fun `archiving duplicate copies removes one visible result and closes its source mail`() {
+        val collapsed = email("READ").copy(duplicateIds = listOf(10, 11), duplicateCount = 2)
+        val unrelated = email("READ").copy(id = 20)
+        val state = PhacteurUiState(
+            emails = listOf(collapsed, unrelated), selectedEmail = collapsed.copy(id = 11),
+            mailboxTotalCount = 2, mailboxHasMore = true,
+        ).applyEmailStatus(collapsed.statusUpdateIds, "ARCHIVED", closeAfter = true)
+
+        assertEquals(listOf(unrelated), state.emails)
+        assertEquals(1, state.mailboxTotalCount)
+        assertFalse(state.mailboxHasMore)
+        assertNull(state.selectedEmail)
+    }
+
     private fun account(id: Int, primary: Boolean = false, canSend: Boolean = true) = EmailAccount(
         id = id, email = "$id@example.com", provider = "Phacteur", isPrimary = primary,
         isActive = true, canSend = canSend, syncStatus = "IDLE",

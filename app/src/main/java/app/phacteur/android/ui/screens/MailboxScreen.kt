@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -329,6 +330,12 @@ private fun EmailRow(email: MailboxEmail, account: EmailAccount?, accountIndex: 
                             fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (email.hasAttachments) Icon(Icons.Outlined.AttachFile, "Pièces jointes", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (email.duplicateCount > 1) {
+                            Text("×${email.duplicateCount}",
+                                modifier = Modifier.semantics { contentDescription = "${email.duplicateCount} exemplaires" },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         Text(compactMailDate(email.receivedAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (unread) Box(Modifier.size(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
                     }

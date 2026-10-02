@@ -117,12 +117,18 @@ class PhacteurApi(
             .let(::parseEmail)
     }
 
-    suspend fun updateEmailStatus(emailId: Int, status: String) {
-        requestObject(
-            path = "api/emails",
-            method = "PATCH",
-            jsonBody = JSONObject().put("emailIds", JSONArray().put(emailId)).put("status", status),
-        )
+    suspend fun updateEmailStatus(emailId: Int, status: String) = updateEmailStatus(listOf(emailId), status)
+
+    suspend fun updateEmailStatus(emailIds: List<Int>, status: String) {
+        require(status in setOf("UNREAD", "READ", "ARCHIVED", "DELETED")) { "Statut d’email invalide" }
+        // A visible deduplicated row can contain more than the API's 500-ID limit.
+        for (batch in emailStatusBatches(emailIds)) {
+            requestObject(
+                path = "api/emails",
+                method = "PATCH",
+                jsonBody = JSONObject().put("emailIds", JSONArray(batch)).put("status", status),
+            )
+        }
     }
 
     suspend fun threads(accountIds: List<Int>? = null): List<MailThread> {

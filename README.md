@@ -13,7 +13,7 @@ this source tree.
 
 The downloadable APK is a debug preview for sideload testing on Android 9 and
 newer. It is debug-signed and is not a Play Store or production build. Version
-1.1.0 (build 4) adds native mailbox-group management and the mail calendar, with
+1.1.0 (build 5) adds native mailbox-group management and the mail calendar, with
 Phacteur's web identity and swipe refresh. Opt-in Firebase notifications require
 the matching server routes, mobile delivery migration, and server Firebase
 configuration to be deployed. Background email checks remain available without
@@ -27,6 +27,8 @@ signing identity. A later production-signed build can require reinstalling the a
   compact message rows, and phone/tablet split views;
 - searchable mailbox and group selection, using the same accounts and groups
   as the website, with each message’s receiving identity visible;
+- duplicate counts matching the website, with read/archive/delete actions
+  applied to every copy included in the selected mailbox scope;
 - native group creation, editing and deletion, including mailbox order, colors,
   inactive mailboxes and a deletion confirmation that preserves messages;
 - conversations scoped to the same mailboxes/groups, with refresh of their

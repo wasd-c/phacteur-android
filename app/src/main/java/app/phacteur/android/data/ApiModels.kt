@@ -37,8 +37,27 @@ data class MailboxEmail(
     val isStarred: Boolean,
     val attachments: List<EmailAttachment>,
     val htmlBody: String? = null,
+    val duplicateIds: List<Int> = emptyList(),
+    val duplicateCount: Int = 1,
 ) {
     val displaySender: String get() = senderName?.takeIf(String::isNotBlank) ?: sender
+
+    /** A mailbox row represents only the copies included by its server-side scope. */
+    val statusUpdateIds: List<Int> get() = (listOf(id) + duplicateIds).filter { it > 0 }.distinct()
+}
+
+internal fun emailStatusBatches(emailIds: List<Int>): List<List<Int>> {
+    require(emailIds.isNotEmpty() && emailIds.all { it > 0 }) { "Les identifiants des emails doivent être positifs" }
+    return emailIds.distinct().chunked(500)
+}
+
+/** Retain the exact source email while recovering copies visible in the loaded mailbox scope. */
+fun MailboxEmail.withDuplicateMetadata(rows: List<MailboxEmail>): MailboxEmail {
+    val row = rows.firstOrNull { id in it.statusUpdateIds } ?: return this
+    return copy(
+        duplicateIds = row.statusUpdateIds,
+        duplicateCount = maxOf(row.duplicateCount, row.statusUpdateIds.size),
+    )
 }
 
 data class MailboxPage(
@@ -219,11 +238,20 @@ internal fun parseUser(value: JSONObject) = User(
 )
 
 internal fun parseEmail(value: JSONObject): MailboxEmail {
+    val id = value.getInt("id")
     val thread = value.optJSONObject("thread")
     val emailAccountId = value.optJSONObject("emailAccount")?.optInt("id")?.takeIf { it > 0 }
         ?: value.optInt("emailAccountId").takeIf { it > 0 }
+    val duplicateIds = value.optJSONArray("duplicateIds")?.let { ids ->
+        buildList {
+            for (index in 0 until ids.length()) {
+                ids.optString(index).toIntOrNull()?.takeIf { it > 0 }?.let(::add)
+            }
+        }.distinct()
+    }.orEmpty()
+    val representedCount = (listOf(id) + duplicateIds).filter { it > 0 }.distinct().size.coerceAtLeast(1)
     return MailboxEmail(
-        id = value.getInt("id"),
+        id = id,
         sender = value.optString("sender"),
         senderName = value.optionalString("senderName"),
         subject = value.optString("subject", "(Sans objet)"),
@@ -243,6 +271,8 @@ internal fun parseEmail(value: JSONObject): MailboxEmail {
             )
         }.orEmpty(),
         htmlBody = value.optionalString("htmlBody"),
+        duplicateIds = duplicateIds,
+        duplicateCount = maxOf(value.optionalString("duplicateCount")?.toIntOrNull() ?: 1, representedCount),
     )
 }
 
@@ -270,7 +300,8 @@ internal fun parseThreadMessage(value: JSONObject) = ThreadMessage(
     senderName = value.optionalString("senderName"),
     subject = value.optString("subject", "(Sans objet)"),
     body = value.optionalString("body").orEmpty(),
-    emailAccountId = value.optInt("emailAccountId").takeIf { it > 0 },
+    emailAccountId = value.optJSONObject("emailAccount")?.optInt("id")?.takeIf { it > 0 }
+        ?: value.optInt("emailAccountId").takeIf { it > 0 },
     receivedAt = value.optString("receivedAt"),
     status = value.optString("status", "READ"),
     htmlBody = value.optionalString("htmlBody"),

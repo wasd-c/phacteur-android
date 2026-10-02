@@ -26,6 +26,7 @@ import app.phacteur.android.data.Passkey
 import app.phacteur.android.data.ThreadMessage
 import app.phacteur.android.data.User
 import app.phacteur.android.data.accountIds
+import app.phacteur.android.data.withDuplicateMetadata
 import app.phacteur.android.notifications.NotificationPreferences
 import app.phacteur.android.notifications.PushRegistrationManager
 import kotlinx.coroutines.async
@@ -133,10 +134,15 @@ internal fun PhacteurUiState.defaultSendingAccountId(): Int? {
         ?: sendable.firstOrNull()?.id
 }
 
-internal fun PhacteurUiState.applyEmailStatus(emailId: Int, status: String, closeAfter: Boolean): PhacteurUiState {
-    val updated = emails.map { if (it.id == emailId) it.copy(status = status) else it }
+internal fun PhacteurUiState.applyEmailStatus(emailId: Int, status: String, closeAfter: Boolean): PhacteurUiState =
+    applyEmailStatus(listOf(emailId), status, closeAfter)
+
+internal fun PhacteurUiState.applyEmailStatus(emailIds: List<Int>, status: String, closeAfter: Boolean): PhacteurUiState {
+    val affectedIds = emailIds.toSet()
+    fun MailboxEmail.isAffected() = statusUpdateIds.any { it in affectedIds }
+    val updated = emails.map { if (it.isAffected()) it.copy(status = status) else it }
         .filterNot { email ->
-            email.id == emailId && when {
+            email.isAffected() && when {
                 mailboxStatus != null -> status != mailboxStatus
                 else -> status in setOf("ARCHIVED", "DELETED")
             }
@@ -148,8 +154,8 @@ internal fun PhacteurUiState.applyEmailStatus(emailId: Int, status: String, clos
         // Removing an item shifts server offsets; page two is unsafe until page one reloads.
         mailboxPage = if (removed > 0) 1 else mailboxPage,
         mailboxHasMore = if (removed > 0) false else mailboxHasMore,
-        selectedEmail = if (selectedEmail?.id == emailId && closeAfter && status in setOf("ARCHIVED", "DELETED")) null
-        else selectedEmail?.let { if (it.id == emailId) it.copy(status = status) else it },
+        selectedEmail = if (selectedEmail?.isAffected() == true && closeAfter && status in setOf("ARCHIVED", "DELETED")) null
+        else selectedEmail?.let { if (it.isAffected()) it.copy(status = status) else it },
         message = when (status) {
             "ARCHIVED" -> "Email archivé"
             "DELETED" -> "Email supprimé"
@@ -536,10 +542,10 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
 
     fun updateEmailStatus(email: MailboxEmail, status: String, closeAfter: Boolean = true) = launchAction {
         val session = sessionVersion
-        api.updateEmailStatus(email.id, status)
+        api.updateEmailStatus(email.statusUpdateIds, status)
         if (sessionVersion != session) return@launchAction
         val current = _state.value
-        val updated = current.applyEmailStatus(email.id, status, closeAfter)
+        val updated = current.applyEmailStatus(email.statusUpdateIds, status, closeAfter)
         _state.value = updated
         if (updated.emails.size < current.emails.size ||
             mailboxLoadJob?.isActive == true && email.status != status
@@ -724,10 +730,11 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
             } else {
                 val selectionVersion = emailSelectionVersion
                 val userId = _state.value.user?.id
+                val session = sessionVersion
                 launchAction {
                     val email = api.email(emailId)
-                    if (emailSelectionVersion == selectionVersion && _state.value.user?.id == userId && _state.value.destination == Destination.MAILBOX) {
-                        selectEmail(email)
+                    if (sessionVersion == session && emailSelectionVersion == selectionVersion && _state.value.user?.id == userId && _state.value.destination == Destination.MAILBOX) {
+                        selectEmail(email.withDuplicateMetadata(_state.value.emails))
                     }
                 }
             }

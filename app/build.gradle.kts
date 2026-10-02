@@ -40,7 +40,7 @@ android {
         applicationId = "app.phacteur.android"
         minSdk = 28
         targetSdk = 36
-        versionCode = 4
+        versionCode = 5
         versionName = "1.1.0"
         multiDexEnabled = true
 
