@@ -36,6 +36,7 @@ data class MailboxEmail(
     val threadId: String?,
     val isStarred: Boolean,
     val attachments: List<EmailAttachment>,
+    val htmlBody: String? = null,
 ) {
     val displaySender: String get() = senderName?.takeIf(String::isNotBlank) ?: sender
 }
@@ -45,7 +46,67 @@ data class MailboxPage(
     val page: Int,
     val totalPages: Int,
     val hasMore: Boolean,
+    val totalCount: Int = emails.size,
+    val searchLimited: Boolean = false,
 )
+
+sealed interface MailboxScope {
+    data object All : MailboxScope
+    data class Account(val id: Int) : MailboxScope
+    data class Group(val id: String) : MailboxScope
+}
+
+data class MailboxGroupMember(
+    val emailAccountId: Int,
+    val email: String,
+    val displayName: String?,
+    val isActive: Boolean,
+)
+
+data class MailboxGroup(
+    val id: String,
+    val name: String,
+    val color: String?,
+    val members: List<MailboxGroupMember>,
+) {
+    val activeAccountIds: List<Int> get() = members.filter { it.isActive }
+        .map(MailboxGroupMember::emailAccountId).distinct()
+}
+
+/** A missing or empty group must stay empty, never fall back to all mailboxes. */
+fun MailboxScope.accountIds(groups: List<MailboxGroup>): List<Int>? = when (this) {
+    MailboxScope.All -> null
+    is MailboxScope.Account -> listOf(id)
+    is MailboxScope.Group -> groups.firstOrNull { it.id == id }?.activeAccountIds.orEmpty()
+}
+
+internal data class MailboxQuery(
+    val status: String? = null,
+    val search: String = "",
+    val accountIds: List<Int>? = null,
+    val category: String? = null,
+) {
+    val isEmptyScope: Boolean get() = accountIds?.isEmpty() == true
+
+    fun parameters(page: Int, limit: Int): Map<String, String> {
+        require(page > 0 && limit in 1..100)
+        require(accountIds == null || accountIds.size <= 100 && accountIds.all { it > 0 })
+        require(category == null || category in setOf("important", "newsletter", "other"))
+        require(status == null || status in setOf("READ", "UNREAD", "ARCHIVED", "DELETED"))
+        // The API treats an omitted/blank accountIds as all accounts.
+        check(!isEmptyScope) { "Un groupe vide ne doit pas lancer une requête globale" }
+        return buildMap {
+            put("page", page.toString())
+            put("limit", limit.toString())
+            put("sort", "priority")
+            if (status != "ARCHIVED" && status != "DELETED") put("inbox", "true")
+            status?.let { put("status", it) }
+            search.trim().takeIf(String::isNotBlank)?.let { put("search", it) }
+            accountIds?.let { put("accountIds", it.distinct().joinToString(",")) }
+            category?.let { put("category", it) }
+        }
+    }
+}
 
 data class MailThread(
     val id: String,
@@ -68,6 +129,7 @@ data class ThreadMessage(
     val emailAccountId: Int?,
     val receivedAt: String,
     val status: String,
+    val htmlBody: String? = null,
 ) {
     val displaySender: String get() = senderName?.takeIf(String::isNotBlank) ?: sender
 }
@@ -109,7 +171,12 @@ data class EmailAccount(
     val isActive: Boolean,
     val canSend: Boolean,
     val syncStatus: String,
-)
+    val displayName: String? = null,
+    val avatarUrl: String? = null,
+    val accountType: String = "PHACTEUR",
+) {
+    val label: String get() = displayName?.takeIf(String::isNotBlank) ?: email
+}
 
 data class Passkey(
     val id: String,
@@ -160,7 +227,7 @@ internal fun parseEmail(value: JSONObject): MailboxEmail {
         sender = value.optString("sender"),
         senderName = value.optionalString("senderName"),
         subject = value.optString("subject", "(Sans objet)"),
-        body = value.optString("body"),
+        body = value.optionalString("body").orEmpty(),
         emailAccountId = emailAccountId,
         receivedAt = value.optString("receivedAt"),
         status = value.optString("status", "READ"),
@@ -175,6 +242,7 @@ internal fun parseEmail(value: JSONObject): MailboxEmail {
                 fileSize = attachment.optLong("fileSize"),
             )
         }.orEmpty(),
+        htmlBody = value.optionalString("htmlBody"),
     )
 }
 
@@ -201,10 +269,11 @@ internal fun parseThreadMessage(value: JSONObject) = ThreadMessage(
     sender = value.optString("sender"),
     senderName = value.optionalString("senderName"),
     subject = value.optString("subject", "(Sans objet)"),
-    body = value.optString("body"),
+    body = value.optionalString("body").orEmpty(),
     emailAccountId = value.optInt("emailAccountId").takeIf { it > 0 },
     receivedAt = value.optString("receivedAt"),
     status = value.optString("status", "READ"),
+    htmlBody = value.optionalString("htmlBody"),
 )
 
 internal fun parseContact(value: JSONObject) = Contact(
@@ -227,4 +296,21 @@ internal fun parseEmailAccount(value: JSONObject) = EmailAccount(
     isActive = value.optBoolean("isActive", true),
     canSend = value.optBoolean("canSend", true),
     syncStatus = value.optString("syncStatus", "IDLE"),
+    displayName = value.optionalString("displayName"),
+    avatarUrl = value.optionalString("avatarUrl"),
+    accountType = value.optString("accountType", "PHACTEUR"),
+)
+
+internal fun parseMailboxGroup(value: JSONObject) = MailboxGroup(
+    id = value.getString("id"),
+    name = value.getString("name"),
+    color = value.optionalString("color"),
+    members = value.optJSONArray("members")?.objectList()?.map { member ->
+        MailboxGroupMember(
+            emailAccountId = member.getString("emailAccountId").toInt(),
+            email = member.optString("email"),
+            displayName = member.optionalString("displayName"),
+            isActive = member.optBoolean("isActive", true),
+        )
+    }.orEmpty(),
 )

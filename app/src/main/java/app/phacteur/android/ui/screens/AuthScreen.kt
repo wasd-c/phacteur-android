@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import app.phacteur.android.ui.components.PhacteurBrand
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -63,26 +64,10 @@ fun AuthScreen(
                 .padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.primary,
-                shadowElevation = 10.dp,
-            ) {
-                Icon(
-                    Icons.Outlined.MailOutline,
-                    contentDescription = null,
-                    modifier = Modifier.padding(18.dp).size(36.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                )
-            }
-            Spacer(Modifier.height(22.dp))
+            PhacteurBrand()
+            Spacer(Modifier.height(18.dp))
             Text(
-                "Phacteur",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "Votre boîte mail, plus calme.",
+                "Toutes vos identités, une seule boîte.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

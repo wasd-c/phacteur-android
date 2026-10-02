@@ -18,16 +18,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Contacts
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -42,6 +47,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import app.phacteur.android.ui.components.PhacteurBrand
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,6 +68,8 @@ import app.phacteur.android.BuildConfig
 import app.phacteur.android.notifications.NotificationHelper
 import app.phacteur.android.notifications.NotificationPreferences
 import app.phacteur.android.ui.screens.AuthScreen
+import app.phacteur.android.ui.screens.CalendarScreen
+import app.phacteur.android.ui.screens.GroupsScreen
 import app.phacteur.android.ui.screens.ComposeSheet
 import app.phacteur.android.ui.screens.ContactsScreen
 import app.phacteur.android.ui.screens.ConversationsScreen
@@ -76,11 +85,16 @@ private data class NavigationItem(
 )
 
 private val navigationItems = listOf(
-    NavigationItem(Destination.DASHBOARD, "Accueil", Icons.Outlined.Dashboard),
-    NavigationItem(Destination.MAILBOX, "Emails", Icons.Outlined.Inbox),
+    NavigationItem(Destination.MAILBOX, "Courrier", Icons.Outlined.Inbox),
     NavigationItem(Destination.CONVERSATIONS, "Fils", Icons.Outlined.Forum),
+    NavigationItem(Destination.CALENDAR, "Calendrier", Icons.Outlined.CalendarMonth),
     NavigationItem(Destination.CONTACTS, "Contacts", Icons.Outlined.Contacts),
     NavigationItem(Destination.SETTINGS, "Réglages", Icons.Outlined.Settings),
+)
+
+private val secondaryNavigationItems = listOf(
+    NavigationItem(Destination.DASHBOARD, "Activité", Icons.Outlined.Dashboard),
+    NavigationItem(Destination.GROUPS, "Groupes", Icons.Outlined.Layers),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,6 +113,7 @@ fun PhacteurApp(
         mutableStateOf(!notificationPreferences.promptHandled && !notificationPreferences.enabled)
     }
     var notificationsAllowed by remember { mutableStateOf(NotificationHelper.canShowNotifications(context)) }
+    var showMoreNavigation by remember { mutableStateOf(false) }
     val openNotificationSettings = {
         context.startActivity(
             Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -190,6 +205,9 @@ fun PhacteurApp(
     BackHandler(enabled = state.composeDraft != null) { viewModel.closeCompose() }
     BackHandler(enabled = state.composeDraft == null && state.selectedEmail != null) { viewModel.selectEmail(null) }
     BackHandler(enabled = state.composeDraft == null && state.selectedThread != null) { viewModel.selectThread(null) }
+    BackHandler(enabled = state.composeDraft == null && state.destination == Destination.GROUPS) {
+        viewModel.navigate(Destination.SETTINGS)
+    }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val wide = maxWidth >= 840.dp
@@ -198,28 +216,54 @@ fun PhacteurApp(
                 Column {
                     TopAppBar(
                         title = {
-                            Text(
-                                when (state.destination) {
-                                    Destination.DASHBOARD -> "Vue d’ensemble"
-                                    Destination.MAILBOX -> "Boîte de réception"
-                                    Destination.CONVERSATIONS -> "Conversations"
-                                    Destination.CONTACTS -> "Contacts"
-                                    Destination.SETTINGS -> "Réglages"
-                                },
-                            )
+                            Column {
+                                PhacteurBrand()
+                                if (state.destination != Destination.MAILBOX) {
+                                    Text(
+                                        when (state.destination) {
+                                            Destination.DASHBOARD -> "Vue d’ensemble"
+                                            Destination.CONVERSATIONS -> "Conversations"
+                                            Destination.CONTACTS -> "Contacts"
+                                            Destination.CALENDAR -> "Calendrier"
+                                            Destination.GROUPS -> "Groupes de boîtes"
+                                            Destination.SETTINGS -> "Réglages"
+                                            Destination.MAILBOX -> "Courrier"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                         actions = {
-                            IconButton(onClick = viewModel::refresh, enabled = !state.refreshing) {
+                            IconButton(onClick = viewModel::refresh, enabled = !state.refreshing && !state.mailboxRefreshing && !state.mailboxLoading && !state.calendarLoading && !state.calendarRefreshing && !state.groupsLoading && !state.groupsRefreshing && !state.groupsSaving && !state.conversationsLoading && !state.conversationsRefreshing) {
                                 Icon(Icons.Outlined.Refresh, contentDescription = "Actualiser")
+                            }
+                            Box {
+                                IconButton(onClick = { showMoreNavigation = true }) {
+                                    Icon(Icons.Outlined.MoreVert, contentDescription = "Autres rubriques")
+                                }
+                                DropdownMenu(expanded = showMoreNavigation, onDismissRequest = { showMoreNavigation = false }) {
+                                    secondaryNavigationItems.forEach { item ->
+                                        DropdownMenuItem(
+                                            text = { Text(item.label) },
+                                            leadingIcon = { Icon(item.icon, contentDescription = null) },
+                                            onClick = { showMoreNavigation = false; viewModel.navigate(item.destination) },
+                                        )
+                                    }
+                                }
                             }
                         },
                     )
-                    if (state.loading || state.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if ((state.loading || state.refreshing) && state.destination != Destination.MAILBOX) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
                 }
             },
             bottomBar = {
                 if (!wide) {
-                    NavigationBar {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
                         navigationItems.forEach { item ->
                             NavigationBarItem(
                                 selected = state.destination == item.destination,
@@ -232,10 +276,14 @@ fun PhacteurApp(
                 }
             },
             floatingActionButton = {
-                if (state.destination != Destination.SETTINGS) {
-                    FloatingActionButton(onClick = { viewModel.openCompose() }) {
-                        Icon(Icons.Outlined.Add, contentDescription = "Nouveau message")
-                    }
+                if (state.destination in setOf(Destination.MAILBOX, Destination.CONVERSATIONS, Destination.CONTACTS, Destination.DASHBOARD) && state.selectedEmail == null && state.selectedThread == null) {
+                    ExtendedFloatingActionButton(
+                        onClick = { viewModel.openCompose() },
+                        icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                        text = { Text("Écrire") },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    )
                 }
             },
             snackbarHost = { SnackbarHost(snackbar) },
@@ -243,7 +291,7 @@ fun PhacteurApp(
             Row(Modifier.fillMaxSize().padding(padding)) {
                 if (wide) {
                     NavigationRail {
-                        navigationItems.forEach { item ->
+                        (navigationItems + secondaryNavigationItems).forEach { item ->
                             NavigationRailItem(
                                 selected = state.destination == item.destination,
                                 onClick = { viewModel.navigate(item.destination) },
@@ -258,19 +306,34 @@ fun PhacteurApp(
                         Destination.DASHBOARD -> DashboardScreen(
                             dashboard = state.dashboard,
                             userName = state.user!!.displayName,
+                            onAccountClick = { account ->
+                                viewModel.setMailboxScope(app.phacteur.android.data.MailboxScope.Account(account.id))
+                            },
                             onEmailClick = { preview ->
-                                viewModel.navigate(Destination.MAILBOX)
-                                viewModel.selectEmail(state.emails.firstOrNull { it.id == preview.id } ?: preview)
+                                viewModel.handleNotification(preview.id, null)
                             },
                             modifier = Modifier.fillMaxSize(),
                         )
                         Destination.MAILBOX -> MailboxScreen(
                             emails = state.emails,
                             selectedEmail = state.selectedEmail,
+                            accounts = state.accounts,
+                            groups = state.mailboxGroups,
+                            scope = state.mailboxScope,
+                            category = state.mailboxCategory,
+                            loading = state.mailboxLoading,
+                            refreshing = state.mailboxRefreshing,
+                            loadingMore = state.loadingMore,
+                            totalCount = state.mailboxTotalCount,
+                            searchLimited = state.mailboxSearchLimited,
+                            loadError = state.mailboxError,
                             search = state.mailboxSearch,
                             status = state.mailboxStatus,
                             hasMore = state.mailboxHasMore,
                             wide = wide,
+                            onScopeChange = viewModel::setMailboxScope,
+                            onCategory = viewModel::setMailboxCategory,
+                            onRefresh = viewModel::refresh,
                             onSearch = viewModel::searchMailbox,
                             onStatus = viewModel::setMailboxStatus,
                             onSelect = viewModel::selectEmail,
@@ -288,14 +351,28 @@ fun PhacteurApp(
                         )
                         Destination.CONVERSATIONS -> ConversationsScreen(
                             threads = state.threads,
+                            refreshing = state.conversationsRefreshing,
+                            onRefresh = viewModel::refresh,
                             selectedThread = state.selectedThread,
                             messages = state.threadMessages,
+                            messagesLoading = state.threadMessagesLoading,
+                            messagesError = state.threadMessagesError,
                             wide = wide,
                             onSelect = viewModel::selectThread,
                             onToggleStar = viewModel::toggleThreadStar,
                             onArchive = viewModel::archiveThread,
+                            accounts = state.accounts,
+                            groups = state.mailboxGroups,
+                            scope = state.mailboxScope,
+                            loading = state.conversationsLoading,
+                            loadError = state.conversationsError,
+                            onScopeChange = viewModel::setConversationScope,
                             onReply = { thread ->
-                                val recipient = thread.participants.firstOrNull { it != state.user!!.email }.orEmpty()
+                                val ownEmails = (state.accounts.map { it.email } + state.user!!.email)
+                                    .map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
+                                val recipient = thread.participants.firstOrNull {
+                                    it.trim().lowercase(java.util.Locale.ROOT) !in ownEmails
+                                }.orEmpty()
                                 viewModel.openCompose(
                                     recipients = recipient,
                                     subject = if (thread.subject.startsWith("Re:", true)) thread.subject else "Re: ${thread.subject}",
@@ -310,6 +387,34 @@ fun PhacteurApp(
                             search = state.contactSearch,
                             onSearch = viewModel::searchContacts,
                             onCompose = { viewModel.openCompose(recipients = it.email.orEmpty()) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        Destination.CALENDAR -> CalendarScreen(
+                            events = state.calendarEvents,
+                            visibleMonth = state.calendarMonth,
+                            selectedDate = state.calendarDate,
+                            loading = state.calendarLoading,
+                            refreshing = state.calendarRefreshing,
+                            error = state.calendarError,
+                            onMonthChange = viewModel::changeCalendarMonth,
+                            onSelectDate = viewModel::selectCalendarDate,
+                            onToday = viewModel::calendarToday,
+                            onRefresh = viewModel::refresh,
+                            onOpenSourceMail = { event -> viewModel.handleNotification(event.relatedEmailId, event.relatedThreadId) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        Destination.GROUPS -> GroupsScreen(
+                            groups = state.mailboxGroups,
+                            accounts = state.accounts,
+                            loading = state.groupsLoading,
+                            refreshing = state.groupsRefreshing,
+                            saving = state.groupsSaving,
+                            loadError = state.groupsLoadError,
+                            actionError = state.groupsActionError,
+                            mutationVersion = state.groupsMutationVersion,
+                            onRefresh = viewModel::refresh,
+                            onSave = viewModel::saveMailboxGroup,
+                            onDelete = viewModel::deleteMailboxGroup,
                             modifier = Modifier.fillMaxSize(),
                         )
                         Destination.SETTINGS -> SettingsScreen(
@@ -328,6 +433,8 @@ fun PhacteurApp(
                                 }
                             },
                             onAddPasskey = { viewModel.registerPasskey(activity) },
+                            onManageGroups = { viewModel.navigate(Destination.GROUPS) },
+                            onDashboard = { viewModel.navigate(Destination.DASHBOARD) },
                             onOpenWeb = { path ->
                                 val uri = Uri.parse(BuildConfig.PHACTEUR_BASE_URL).buildUpon()
                                     .appendEncodedPath(path)

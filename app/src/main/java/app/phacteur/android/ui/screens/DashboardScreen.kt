@@ -25,12 +25,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.phacteur.android.data.EmailAccount
+import app.phacteur.android.ui.components.emailPreview
 import app.phacteur.android.data.Dashboard
 import app.phacteur.android.data.MailboxEmail
 import app.phacteur.android.ui.components.EmptyPane
@@ -42,6 +45,7 @@ fun DashboardScreen(
     dashboard: Dashboard?,
     userName: String,
     onEmailClick: (MailboxEmail) -> Unit,
+    onAccountClick: (EmailAccount) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (dashboard == null) {
@@ -115,7 +119,7 @@ fun DashboardScreen(
                             )
                             Text(email.subject, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                email.body,
+                                remember(email.body, email.htmlBody) { emailPreview(email.body, email.htmlBody) },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -136,6 +140,8 @@ fun DashboardScreen(
         }
         items(dashboard.accounts, key = { it.id }) { account ->
             Surface(
+                onClick = { onAccountClick(account) },
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
             ) {

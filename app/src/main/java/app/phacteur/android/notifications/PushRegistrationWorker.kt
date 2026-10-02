@@ -12,12 +12,12 @@ class PushRegistrationWorker(context: Context, params: WorkerParameters) :
 
     override suspend fun doWork(): Result {
         val fid = inputData.getString(FID_INPUT) ?: return Result.failure()
+        val generation = inputData.getString(GENERATION_INPUT).orEmpty()
         val api = AppGraph.from(applicationContext).api
-        if (!NotificationPreferences(applicationContext).enabled) {
+        if (!PushRegistrationManager.isCurrentSession(applicationContext, generation)) {
             return Result.success()
         }
         if (!api.hasSession()) {
-            PushRegistrationManager.disable(applicationContext)
             return Result.success()
         }
         return try {
@@ -29,8 +29,12 @@ class PushRegistrationWorker(context: Context, params: WorkerParameters) :
             Result.success()
         } catch (error: ApiException) {
             if (error.statusCode == 401) {
-                PushRegistrationManager.disable(applicationContext)
+                if (PushRegistrationManager.isCurrentSession(applicationContext, generation)) {
+                    PushRegistrationManager.disable(applicationContext)
+                }
                 Result.success()
+            } else if (isRetryableNotificationStatus(error.statusCode)) {
+                Result.retry()
             } else if (error.statusCode in 400..499) {
                 Result.failure()
             } else {
@@ -43,5 +47,6 @@ class PushRegistrationWorker(context: Context, params: WorkerParameters) :
 
     companion object {
         const val FID_INPUT = "fid"
+        const val GENERATION_INPUT = "generation"
     }
 }

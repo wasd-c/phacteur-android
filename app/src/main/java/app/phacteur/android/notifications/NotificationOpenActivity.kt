@@ -16,6 +16,8 @@ internal object NotificationLaunchStore {
     }
 
     fun consume(): NotificationTarget? = pending.getAndSet(null)
+
+    fun clear() { pending.set(null) }
 }
 
 /**
@@ -26,6 +28,11 @@ internal object NotificationLaunchStore {
 class NotificationOpenActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val generation = intent.getStringExtra(NotificationHelper.EXTRA_GENERATION).orEmpty()
+        if (!PushRegistrationManager.isCurrentSession(this, generation)) {
+            finish()
+            return
+        }
         val emailId = intent.getIntExtra(NotificationHelper.EXTRA_EMAIL_ID, -1).takeIf { it > 0 }
         val threadId = intent.getStringExtra(NotificationHelper.EXTRA_THREAD_ID)
             ?.takeIf { it.isNotBlank() && it.length <= 512 }

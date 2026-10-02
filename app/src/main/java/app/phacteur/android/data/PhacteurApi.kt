@@ -3,6 +3,11 @@ package app.phacteur.android.data
 import android.net.Uri
 import app.phacteur.android.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONException
@@ -78,13 +83,18 @@ class PhacteurApi(
         search: String = "",
         page: Int = 1,
         limit: Int = 50,
+        accountIds: List<Int>? = null,
+        category: String? = null,
     ): MailboxPage {
+        val mailboxQuery = MailboxQuery(status, search, accountIds, category)
+        if (mailboxQuery.isEmptyScope) {
+            return MailboxPage(emptyList(), page = 1, totalPages = 0, hasMore = false, totalCount = 0)
+        }
         val query = Uri.Builder()
-            .appendQueryParameter("page", page.toString())
-            .appendQueryParameter("limit", limit.toString())
             .apply {
-                status?.let { appendQueryParameter("status", it) }
-                search.trim().takeIf(String::isNotBlank)?.let { appendQueryParameter("search", it) }
+                mailboxQuery.parameters(page, limit).forEach { (key, value) ->
+                    appendQueryParameter(key, value)
+                }
             }
             .build()
             .encodedQuery
@@ -95,6 +105,8 @@ class PhacteurApi(
             page = pagination.optInt("page", page),
             totalPages = pagination.optInt("totalPages", 1),
             hasMore = pagination.optBoolean("hasMore"),
+            totalCount = pagination.optInt("totalCount"),
+            searchLimited = pagination.optBoolean("searchLimited"),
         )
     }
 
@@ -113,16 +125,42 @@ class PhacteurApi(
         )
     }
 
-    suspend fun threads(): List<MailThread> = requestObject("api/threads")
-        .getJSONArray("threads")
-        .objectList()
-        .map(::parseThread)
+    suspend fun threads(accountIds: List<Int>? = null): List<MailThread> {
+        if (accountIds?.isEmpty() == true) return emptyList()
+        require(accountIds == null || accountIds.size <= 100 && accountIds.all { it > 0 })
+        val query = Uri.Builder().appendQueryParameter("scope", "conversations").apply {
+            accountIds?.let { appendQueryParameter("accountIds", it.distinct().joinToString(",")) }
+        }.build().encodedQuery
+        return requestObject("api/threads?$query").getJSONArray("threads").objectList().map(::parseThread)
+    }
 
-    suspend fun threadMessages(threadId: String): List<ThreadMessage> =
-        requestObject("api/threads/${pathSegment(threadId)}/messages")
+    suspend fun threadMessages(threadId: String, cachedEmails: List<MailboxEmail> = emptyList()): List<ThreadMessage> {
+        val values = requestObject("api/threads/${pathSegment(threadId)}/messages")
             .getJSONArray("messages")
             .objectList()
-            .map(::parseThreadMessage)
+        val cachedById = cachedEmails.associateBy(MailboxEmail::id)
+        val requests = Semaphore(4)
+        return coroutineScope {
+            values.map { value ->
+                async {
+                    val message = parseThreadMessage(value)
+                    // Older thread endpoints omit the HTML alternative entirely.
+                    // Explicit null means a newer endpoint has already checked it.
+                    if (value.has("htmlBody")) return@async message
+                    cachedById[message.id]?.htmlBody?.let { return@async message.copy(htmlBody = it) }
+                    requests.withPermit {
+                        try {
+                            message.copy(htmlBody = email(message.id).htmlBody)
+                        } catch (error: IOException) {
+                            if (error is ApiException && error.statusCode in setOf(401, 403)) throw error
+                            // Keep the thread's text available if the detail endpoint is unavailable.
+                            message
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
+    }
 
     suspend fun markThreadRead(threadId: String, unread: Boolean) {
         requestObject(
@@ -203,6 +241,36 @@ class PhacteurApi(
         .objectList()
         .map(::parseEmailAccount)
 
+    suspend fun mailboxGroups(): List<MailboxGroup> = requestObject("api/mailbox-groups")
+        .getJSONArray("mailboxGroups")
+        .objectList()
+        .map(::parseMailboxGroup)
+
+    suspend fun saveMailboxGroup(groupId: String?, draft: MailboxGroupDraft): MailboxGroup {
+        val payload = draft.normalized()
+        require(payload.validationError() == null) { payload.validationError().orEmpty() }
+        return requestObject(
+            path = if (groupId == null) "api/mailbox-groups" else "api/mailbox-groups/${pathSegment(groupId)}",
+            method = if (groupId == null) "POST" else "PATCH",
+            jsonBody = JSONObject()
+                .put("name", payload.name)
+                .put("color", payload.color ?: JSONObject.NULL)
+                .put("memberAccountIds", JSONArray(payload.memberAccountIds)),
+        ).getJSONObject("mailboxGroup").let(::parseMailboxGroup)
+    }
+
+    suspend fun deleteMailboxGroup(groupId: String) {
+        requestObject("api/mailbox-groups/${pathSegment(groupId)}", method = "DELETE")
+    }
+
+    suspend fun calendar(range: CalendarRange): List<MailCalendarEvent> {
+        val query = Uri.Builder().apply {
+            range.parameters().forEach { (key, value) -> appendQueryParameter(key, value) }
+        }.build().encodedQuery
+        return requestObject("api/calendar?$query").getJSONArray("events")
+            .objectList().map(::parseCalendarEvent)
+    }
+
     suspend fun passkeys(): List<Passkey> = requestObject("api/user/passkeys")
         .getJSONArray("passkeys")
         .objectList()
@@ -259,6 +327,16 @@ class PhacteurApi(
         )
     }
 
+    suspend fun notificationEmail(emailId: Int): NotificationCursorItem {
+        require(emailId > 0)
+        val value = requestObject("api/mobile/email-notifications/$emailId").getJSONObject("email")
+        return NotificationCursorItem(
+            id = value.getInt("id"),
+            threadId = value.optionalString("threadId"),
+            receivedAt = value.optString("receivedAt"),
+        )
+    }
+
     fun hasSession(): Boolean = cookieStore.hasSession()
 
     private suspend fun requestObject(
@@ -294,7 +372,9 @@ class PhacteurApi(
             connectTimeout = 15_000
             readTimeout = 30_000
             instanceFollowRedirects = false
+            useCaches = false
             setRequestProperty("Accept", "application/json")
+            setRequestProperty("Cache-Control", "no-cache")
             setRequestProperty("Origin", webOrigin)
             setRequestProperty("User-Agent", "Phacteur-Android/${BuildConfig.VERSION_NAME}")
             cookieStore.cookieHeader()?.let { setRequestProperty("Cookie", it) }

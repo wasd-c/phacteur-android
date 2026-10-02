@@ -24,6 +24,8 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.Card
@@ -59,6 +61,8 @@ fun SettingsScreen(
     onNotificationChange: (Boolean) -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onAddPasskey: () -> Unit,
+    onManageGroups: () -> Unit,
+    onDashboard: () -> Unit,
     onOpenWeb: (String) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
@@ -170,6 +174,14 @@ fun SettingsScreen(
             }
         }
 
+        item {
+            OutlinedButton(onClick = onManageGroups, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.Layers, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Gérer les groupes de boîtes")
+            }
+        }
+
         item { SectionTitle("Passkeys") }
         if (passkeys.isEmpty()) {
             item {
@@ -205,6 +217,13 @@ fun SettingsScreen(
         }
 
         item { SectionTitle("Plus") }
+        item {
+            OutlinedButton(onClick = onDashboard, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.Dashboard, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Voir l’activité de mes boîtes")
+            }
+        }
         item {
             SettingLink(Icons.Outlined.Link, "Adresses privées", "my/private-relays", onOpenWeb)
         }

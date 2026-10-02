@@ -1,6 +1,7 @@
 package app.phacteur.android.notifications
 
 import android.content.Context
+import java.util.UUID
 
 class NotificationPreferences(context: Context) {
     private val preferences = context.getSharedPreferences("phacteur_notifications", Context.MODE_PRIVATE)
@@ -21,14 +22,36 @@ class NotificationPreferences(context: Context) {
         get() = preferences.getBoolean("cursor_initialized", false)
         set(value) = preferences.edit().putBoolean("cursor_initialized", value).apply()
 
+    val generation: String
+        get() = preferences.getString("generation", "").orEmpty()
+
+    var boundSession: String?
+        get() = preferences.getString("bound_session", null)
+        set(value) = preferences.edit().putString("bound_session", value).apply()
+
+    fun invalidateSession() {
+        preferences.edit()
+            .putString("generation", UUID.randomUUID().toString())
+            .remove("bound_session")
+            .apply()
+    }
+
+    fun hasSeen(emailId: Int): Boolean = preferences.getString("seen_email_ids", "")
+        .orEmpty().split(',').any { it.toIntOrNull() == emailId }
+
     fun markSeen(emailId: Int) {
-        if (emailId > latestNotifiedEmailId) latestNotifiedEmailId = emailId
+        val seen = preferences.getString("seen_email_ids", "").orEmpty()
+            .split(',').mapNotNull(String::toIntOrNull).filter { it != emailId }
+        preferences.edit()
+            .putString("seen_email_ids", (seen + emailId).takeLast(512).joinToString(","))
+            .apply()
     }
 
     fun resetCursor() {
         preferences.edit()
             .remove("latest_email_id")
             .remove("cursor_initialized")
+            .remove("seen_email_ids")
             .apply()
     }
 }

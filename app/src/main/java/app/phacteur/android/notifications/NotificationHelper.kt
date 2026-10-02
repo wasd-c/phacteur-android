@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import app.phacteur.android.R
+import app.phacteur.android.data.NotificationCursorItem
 
 object NotificationHelper {
     const val CHANNEL_ID = "new-email"
@@ -43,13 +44,20 @@ object NotificationHelper {
     }
 
     @Synchronized
-    fun showNewEmail(context: Context, emailId: Int, threadId: String?): Boolean {
+    fun showNewEmail(
+        context: Context,
+        emailId: Int,
+        threadId: String?,
+        expectedGeneration: String = NotificationPreferences(context).generation,
+    ): Boolean {
         val preferences = NotificationPreferences(context)
-        if (!preferences.enabled || emailId <= 0) return false
+        if (!PushRegistrationManager.isCurrentSession(context, expectedGeneration) || emailId <= 0) return false
+        if (preferences.hasSeen(emailId)) return false
         if (!canShowNotifications(context)) return false
 
         val intent = Intent(context, NotificationOpenActivity::class.java).apply {
             putExtra(EXTRA_EMAIL_ID, emailId)
+            putExtra(EXTRA_GENERATION, expectedGeneration)
             threadId?.let { putExtra(EXTRA_THREAD_ID, it) }
         }
         val pendingIntent = PendingIntent.getActivity(
@@ -80,4 +88,38 @@ object NotificationHelper {
         preferences.markSeen(emailId)
         return true
     }
+
+    @Synchronized
+    fun clearNotifications(context: Context) {
+        NotificationManagerCompat.from(context).cancelAll()
+    }
+
+    @Synchronized
+    fun initializeCursor(context: Context, generation: String, latestEmailId: Int) {
+        if (!PushRegistrationManager.isCurrentSession(context, generation)) return
+        NotificationPreferences(context).apply {
+            latestNotifiedEmailId = maxOf(latestNotifiedEmailId, latestEmailId)
+            cursorInitialized = true
+        }
+    }
+
+    @Synchronized
+    fun completeSyncPage(
+        context: Context,
+        generation: String,
+        emails: List<NotificationCursorItem>,
+        nextAfterId: Int,
+    ): Boolean {
+        if (!PushRegistrationManager.isCurrentSession(context, generation)) return false
+        val preferences = NotificationPreferences(context)
+        val newest = emails.filterNot { preferences.hasSeen(it.id) }.maxByOrNull { it.id }
+        if (newest != null && !showNewEmail(context, newest.id, newest.threadId, generation)) return false
+        // The scan cursor is independent of FCM arrival order. Only a completed
+        // authenticated page may advance it, preserving catch-up for lost pushes.
+        emails.forEach { preferences.markSeen(it.id) }
+        preferences.latestNotifiedEmailId = maxOf(preferences.latestNotifiedEmailId, nextAfterId)
+        return true
+    }
+
+    const val EXTRA_GENERATION = "notificationGeneration"
 }

@@ -12,8 +12,12 @@ googleServices = "4.5.0"
 junit = "4.13.2"
 androidxJunit = "1.2.1"
 espresso = "3.6.1"
+jsoup = "1.23.2"
+desugar = "2.1.5"
 
 [libraries]
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugar" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }

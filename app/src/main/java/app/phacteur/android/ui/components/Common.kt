@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,14 +25,56 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.phacteur.android.R
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+
+@Composable
+fun PhacteurMark(
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Icon(
+        painter = painterResource(R.drawable.ic_phacteur_origami),
+        contentDescription = null,
+        modifier = modifier.size(24.dp),
+        tint = tint,
+    )
+}
+
+@Composable
+fun PhacteurBrand(
+    modifier: Modifier = Modifier,
+    markOnly: Boolean = false,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primary) {
+            Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                PhacteurMark(Modifier.size(23.dp), tint = MaterialTheme.colorScheme.onPrimary)
+            }
+        }
+        if (!markOnly) {
+            Text(
+                "phacteur",
+                color = tint,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = (-0.77).sp,
+                maxLines = 1,
+            )
+        }
+    }
+}
 
 @Composable
 fun LoadingPane(modifier: Modifier = Modifier) {
@@ -52,23 +95,24 @@ fun EmptyPane(
         verticalArrangement = Arrangement.Center,
     ) {
         Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shape = MaterialTheme.shapes.large,
         ) {
             Icon(
                 imageVector = Icons.Outlined.Inbox,
                 contentDescription = null,
                 modifier = Modifier.padding(18.dp).size(28.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
         Spacer(Modifier.height(18.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
         Spacer(Modifier.height(6.dp))
         Text(
             description,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -79,14 +123,15 @@ fun SenderAvatar(label: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(42.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.secondaryContainer),
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             initial,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
