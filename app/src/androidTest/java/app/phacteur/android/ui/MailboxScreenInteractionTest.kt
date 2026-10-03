@@ -28,6 +28,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.Instant
 
 @RunWith(AndroidJUnit4::class)
 class MailboxScreenInteractionTest {
@@ -157,6 +158,27 @@ class MailboxScreenInteractionTest {
         compose.runOnIdle { searchLimited = false }
         compose.onNodeWithText("La recherche couvre jusqu’à 1 000 messages.", substring = true).assertDoesNotExist()
         compose.onNodeWithText(MailboxFixtures.email.subject).assertIsDisplayed()
+    }
+
+    @Test
+    fun mailRowWithMeetingActionMeasuresAndItsSubjectRemainsSelectable() {
+        val meetingEmail = MailboxFixtures.email.copy(
+            subject = "Invitation à une réunion",
+            body = "Rejoignez-nous : https://meet.google.com/abc-defg-hij",
+            htmlBody = null,
+            receivedAt = Instant.now().toString(),
+            direction = "RECEIVED",
+        )
+        val selections = mutableListOf<MailboxEmail?>()
+        compose.setContent {
+            TestMailbox(emails = listOf(meetingEmail), onSelect = { selections += it })
+        }
+
+        compose.onNodeWithText("Rejoindre la réunion").assertIsDisplayed()
+        compose.onNodeWithText("meet.google.com").assertIsDisplayed()
+        compose.onNodeWithText(meetingEmail.subject).performTouchInput { click() }
+
+        compose.runOnIdle { assertEquals(listOf(meetingEmail), selections) }
     }
 
     private fun swipeInboxDown() {

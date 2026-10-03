@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,12 +40,12 @@ import java.util.Locale
 @Composable
 fun PhacteurMark(
     modifier: Modifier = Modifier,
-    tint: Color = MaterialTheme.colorScheme.onSurface,
+    tint: Color = Color.Unspecified,
 ) {
     Icon(
-        painter = painterResource(R.drawable.ic_phacteur_origami),
+        painter = painterResource(R.drawable.phacteur_mark),
         contentDescription = null,
-        modifier = modifier.size(24.dp),
+        modifier = modifier.size(32.dp),
         tint = tint,
     )
 }
@@ -57,19 +56,15 @@ fun PhacteurBrand(
     markOnly: Boolean = false,
     tint: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primary) {
-            Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                PhacteurMark(Modifier.size(23.dp), tint = MaterialTheme.colorScheme.onPrimary)
-            }
-        }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        PhacteurMark(Modifier.size(32.dp))
         if (!markOnly) {
             Text(
                 "phacteur",
                 color = tint,
-                fontSize = 22.sp,
+                fontSize = 16.8f.sp,
                 fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-0.77).sp,
+                letterSpacing = (-0.588f).sp,
                 maxLines = 1,
             )
         }

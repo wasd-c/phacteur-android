@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Original website PNG in a 108dp transparent canvas, with its 52dp mark inside the 66dp safe circle. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/phacteur_launcher_monochrome_layer"
+    android:gravity="fill"
+    android:filter="true" />

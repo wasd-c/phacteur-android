@@ -33,6 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.phacteur.android.data.EmailAccount
+import app.phacteur.android.data.presentation
+import app.phacteur.android.ui.components.AccountProviderMark
+import app.phacteur.android.ui.components.accountStatusColor
 import app.phacteur.android.ui.components.emailPreview
 import app.phacteur.android.data.Dashboard
 import app.phacteur.android.data.MailboxEmail
@@ -47,6 +50,7 @@ fun DashboardScreen(
     onEmailClick: (MailboxEmail) -> Unit,
     onAccountClick: (EmailAccount) -> Unit,
     modifier: Modifier = Modifier,
+    accounts: List<EmailAccount> = emptyList(),
 ) {
     if (dashboard == null) {
         EmptyPane(
@@ -138,7 +142,9 @@ fun DashboardScreen(
         item {
             Text("Comptes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
-        items(dashboard.accounts, key = { it.id }) { account ->
+        val identities = accounts.associateBy(EmailAccount::id)
+        items(dashboard.accounts.map { identities[it.id] ?: it }, key = { it.id }) { account ->
+            val info = account.presentation()
             Surface(
                 onClick = { onAccountClick(account) },
                 modifier = Modifier.fillMaxWidth(),
@@ -146,18 +152,18 @@ fun DashboardScreen(
                 color = MaterialTheme.colorScheme.surfaceContainer,
             ) {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.AlternateEmail, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    AccountProviderMark(account)
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Text(account.email, fontWeight = FontWeight.SemiBold)
                         Text(
-                            account.provider,
+                            info.providerLabel,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Text(
-                        if (account.isActive) "Actif" else "Inactif",
-                        color = if (account.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        info.statusLabel,
+                        color = accountStatusColor(info.statusTone),
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }

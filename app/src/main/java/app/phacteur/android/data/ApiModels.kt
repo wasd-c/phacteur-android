@@ -39,6 +39,8 @@ data class MailboxEmail(
     val htmlBody: String? = null,
     val duplicateIds: List<Int> = emptyList(),
     val duplicateCount: Int = 1,
+    val direction: String = "UNKNOWN",
+    val metadata: EmailMetadata? = null,
 ) {
     val displaySender: String get() = senderName?.takeIf(String::isNotBlank) ?: sender
 
@@ -57,6 +59,7 @@ fun MailboxEmail.withDuplicateMetadata(rows: List<MailboxEmail>): MailboxEmail {
     return copy(
         duplicateIds = row.statusUpdateIds,
         duplicateCount = maxOf(row.duplicateCount, row.statusUpdateIds.size),
+        direction = direction.takeIf { it != "UNKNOWN" } ?: row.direction.takeIf { row.id == id } ?: direction,
     )
 }
 
@@ -149,6 +152,8 @@ data class ThreadMessage(
     val receivedAt: String,
     val status: String,
     val htmlBody: String? = null,
+    val direction: String = "UNKNOWN",
+    val metadata: EmailMetadata? = null,
 ) {
     val displaySender: String get() = senderName?.takeIf(String::isNotBlank) ?: sender
 }
@@ -192,7 +197,14 @@ data class EmailAccount(
     val syncStatus: String,
     val displayName: String? = null,
     val avatarUrl: String? = null,
-    val accountType: String = "PHACTEUR",
+    val accountType: String = "UNKNOWN",
+    val isLocal: Boolean = false,
+    val canSync: Boolean = false,
+    val lastSyncAt: String? = null,
+    val customDomain: String? = null,
+    val customDomainReady: Boolean? = null,
+    val replyTo: String? = null,
+    val addedAt: String? = null,
 ) {
     val label: String get() = displayName?.takeIf(String::isNotBlank) ?: email
 }
@@ -273,6 +285,8 @@ internal fun parseEmail(value: JSONObject): MailboxEmail {
         htmlBody = value.optionalString("htmlBody"),
         duplicateIds = duplicateIds,
         duplicateCount = maxOf(value.optionalString("duplicateCount")?.toIntOrNull() ?: 1, representedCount),
+        direction = value.optString("direction", "UNKNOWN"),
+        metadata = parseEmailMetadata(value),
     )
 }
 
@@ -305,6 +319,8 @@ internal fun parseThreadMessage(value: JSONObject) = ThreadMessage(
     receivedAt = value.optString("receivedAt"),
     status = value.optString("status", "READ"),
     htmlBody = value.optionalString("htmlBody"),
+    direction = value.optString("direction", "UNKNOWN"),
+    metadata = parseEmailMetadata(value),
 )
 
 internal fun parseContact(value: JSONObject) = Contact(
@@ -322,14 +338,23 @@ internal fun parseContact(value: JSONObject) = Contact(
 internal fun parseEmailAccount(value: JSONObject) = EmailAccount(
     id = value.optString("id").toIntOrNull() ?: value.optInt("id"),
     email = value.optString("email"),
-    provider = value.optString("provider", "Phacteur"),
+    provider = value.optString("provider", "Messagerie"),
     isPrimary = value.optBoolean("isPrimary"),
     isActive = value.optBoolean("isActive", true),
-    canSend = value.optBoolean("canSend", true),
-    syncStatus = value.optString("syncStatus", "IDLE"),
+    canSend = value.optBoolean("canSend", false),
+    syncStatus = value.optString("syncStatus", "UNKNOWN"),
     displayName = value.optionalString("displayName"),
     avatarUrl = value.optionalString("avatarUrl"),
-    accountType = value.optString("accountType", "PHACTEUR"),
+    accountType = value.optString("accountType", "UNKNOWN"),
+    isLocal = value.optBoolean("isLocal", false),
+    canSync = value.optBoolean("canSync", false),
+    lastSyncAt = value.optionalString("lastSyncAt"),
+    customDomain = value.optionalString("customDomain"),
+    customDomainReady = if (value.has("customDomainReady") && !value.isNull("customDomainReady")) {
+        value.optBoolean("customDomainReady")
+    } else null,
+    replyTo = value.optionalString("replyTo"),
+    addedAt = value.optionalString("addedAt"),
 )
 
 internal fun parseMailboxGroup(value: JSONObject) = MailboxGroup(

@@ -100,6 +100,8 @@ fun GroupsScreen(
     onSave: (String?, MailboxGroupDraft) -> Unit,
     onDelete: (MailboxGroup) -> Unit,
     modifier: Modifier = Modifier,
+    createRequested: Boolean = false,
+    onCreateRequestHandled: () -> Unit = {},
 ) {
     val usableAccounts = accounts.filter { it.accountType != "RELAY" }
     val accountIds = usableAccounts.map(EmailAccount::id).toSet()
@@ -110,6 +112,17 @@ fun GroupsScreen(
     var observedMutation by rememberSaveable { mutableStateOf(mutationVersion) }
     var showActionError by rememberSaveable { mutableStateOf(false) }
     val busy = saving || loading || refreshing
+    LaunchedEffect(createRequested, busy, loadError, usableAccounts) {
+        if (createRequested && !busy && loadError == null) {
+            if (usableAccounts.isNotEmpty()) {
+                draft = MailboxGroupDraft(memberAccountIds = listOf(usableAccounts.first().id))
+                editingId = null
+                editing = true
+                showActionError = false
+            }
+            onCreateRequestHandled()
+        }
+    }
     LaunchedEffect(mutationVersion) {
         if (observedMutation != mutationVersion) {
             observedMutation = mutationVersion

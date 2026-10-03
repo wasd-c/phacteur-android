@@ -54,6 +54,8 @@ import app.phacteur.android.ui.components.EmptyPane
 import app.phacteur.android.ui.components.SenderAvatar
 import app.phacteur.android.ui.components.formatTimestamp
 import app.phacteur.android.ui.components.MailboxScopeSelector
+import app.phacteur.android.ui.components.EmailQuickActionBar
+import app.phacteur.android.ui.components.EmailMetadataPanel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,11 +79,12 @@ fun ConversationsScreen(
     loadError: String? = null,
     onScopeChange: (MailboxScope) -> Unit = {},
     modifier: Modifier = Modifier,
+    onCreateGroup: () -> Unit = {},
 ) {
     if (wide) {
         Row(modifier.fillMaxSize()) {
             ConversationListPane(threads, selectedThread, accounts, groups, scope, loading, refreshing,
-                loadError, onScopeChange, onRefresh, onSelect, Modifier.weight(0.4f).fillMaxHeight())
+                loadError, onScopeChange, onRefresh, onSelect, Modifier.weight(0.4f).fillMaxHeight(), onCreateGroup)
             VerticalDivider()
             if (selectedThread == null) {
                 EmptyPane("Sélectionnez une conversation", "Tous les messages apparaîtront ici.", Modifier.weight(0.6f))
@@ -117,7 +120,7 @@ fun ConversationsScreen(
         )
     } else {
         ConversationListPane(threads, null, accounts, groups, scope, loading, refreshing,
-            loadError, onScopeChange, onRefresh, onSelect, modifier)
+            loadError, onScopeChange, onRefresh, onSelect, modifier, onCreateGroup)
     }
 }
 
@@ -128,9 +131,11 @@ private fun ConversationListPane(
     groups: List<MailboxGroup>, scope: MailboxScope, loading: Boolean, refreshing: Boolean,
     error: String?, onScopeChange: (MailboxScope) -> Unit, onRefresh: () -> Unit,
     onSelect: (MailThread) -> Unit, modifier: Modifier,
+    onCreateGroup: () -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
-        MailboxScopeSelector(scope, accounts, groups, onScopeChange, Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+        MailboxScopeSelector(scope, accounts, groups, onScopeChange, Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            onCreateGroup = onCreateGroup)
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         PullToRefreshBox(refreshing, { if (!loading && !refreshing) onRefresh() }, Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize()) {
@@ -297,6 +302,13 @@ private fun ThreadDetail(
                                 }
                             }
                             HorizontalDivider(Modifier.padding(vertical = 14.dp))
+                            EmailMetadataPanel((message.metadata ?: app.phacteur.android.data.EmailMetadata()).copy(
+                                sender = message.sender, senderName = message.senderName,
+                                receivedAt = message.metadata?.receivedAt ?: message.receivedAt,
+                                direction = message.direction.takeIf { it != "UNKNOWN" } ?: message.metadata?.direction,
+                            ), messageId = message.id)
+                            EmailQuickActionBar(message.subject, message.body, message.htmlBody,
+                                receivedAt = message.receivedAt, direction = message.direction)
                             EmailBody(messageId = message.id, body = message.body, htmlBody = message.htmlBody)
                         }
                     }

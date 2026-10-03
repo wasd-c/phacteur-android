@@ -23,6 +23,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -70,13 +72,14 @@ fun MailboxScreen(
     onStatusUpdate: (MailboxEmail, String) -> Unit,
     onReply: (MailboxEmail) -> Unit,
     modifier: Modifier = Modifier,
+    onCreateGroup: () -> Unit = {},
 ) {
     val list: @Composable (Modifier) -> Unit = { listModifier ->
         EmailList(
             emails, selectedEmail, accounts, groups, scope, search, status, category,
             hasMore, loading, refreshing, loadingMore, totalCount, searchLimited, loadError,
             onScopeChange, onSearch, onStatus, onCategory, onRefresh, onSelect, onLoadMore,
-            listModifier,
+            listModifier, onCreateGroup,
         )
     }
     if (wide) {
@@ -142,6 +145,7 @@ private fun EmailList(
     onSelect: (MailboxEmail) -> Unit,
     onLoadMore: () -> Unit,
     modifier: Modifier,
+    onCreateGroup: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     val pullState = rememberPullToRefreshState()
@@ -151,6 +155,7 @@ private fun EmailList(
         MailboxScopeSelector(
             scope, accounts, groups, onScopeChange,
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            onCreateGroup = onCreateGroup,
         )
         OutlinedTextField(
             value = search,
@@ -310,6 +315,7 @@ private fun EmailList(
 @Composable
 private fun EmailRow(email: MailboxEmail, account: EmailAccount?, accountIndex: Int, selected: Boolean, onClick: () -> Unit) {
     val unread = email.status == "UNREAD"
+    val selectionColor = MaterialTheme.colorScheme.primary
     Surface(
         color = when {
             selected -> MaterialTheme.colorScheme.primaryContainer
@@ -319,10 +325,10 @@ private fun EmailRow(email: MailboxEmail, account: EmailAccount?, accountIndex: 
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     ) {
         Column {
-            Row(Modifier.height(IntrinsicSize.Min)) {
-                Box(Modifier.width(3.dp).fillMaxHeight().background(
-                    if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface.copy(alpha = 0f),
-                ))
+            Row(Modifier.fillMaxWidth().drawBehind {
+                if (selected) drawRect(selectionColor, size = Size(3.dp.toPx(), size.height))
+            }) {
+                Spacer(Modifier.width(3.dp))
                 Column(Modifier.weight(1f).padding(horizontal = 17.dp, vertical = 14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(email.displaySender, Modifier.weight(1f),
@@ -348,6 +354,8 @@ private fun EmailRow(email: MailboxEmail, account: EmailAccount?, accountIndex: 
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    EmailQuickActionBar(email.subject, email.body, email.htmlBody,
+                        receivedAt = email.receivedAt, direction = email.direction, compact = true)
                     account?.let {
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -432,6 +440,14 @@ private fun EmailDetail(
                     color = MaterialTheme.colorScheme.primary)
             }
             HorizontalDivider(Modifier.padding(vertical = 20.dp))
+            EmailMetadataPanel((email.metadata ?: app.phacteur.android.data.EmailMetadata()).copy(
+                sender = email.sender, senderName = email.senderName,
+                recipient = email.metadata?.recipient ?: account?.email,
+                receivedAt = email.metadata?.receivedAt ?: email.receivedAt,
+                direction = email.direction.takeIf { it != "UNKNOWN" } ?: email.metadata?.direction,
+            ), messageId = email.id)
+            EmailQuickActionBar(email.subject, email.body, email.htmlBody,
+                receivedAt = email.receivedAt, direction = email.direction)
             EmailBody(messageId = email.id, body = email.body, htmlBody = email.htmlBody)
             if (email.attachments.isNotEmpty()) {
                 Spacer(Modifier.height(24.dp))

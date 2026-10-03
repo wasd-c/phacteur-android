@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import app.phacteur.android.notifications.NotificationLaunchStore
+import app.phacteur.android.notifications.NotificationHelper
 import app.phacteur.android.ui.PhacteurApp
 import app.phacteur.android.ui.PhacteurViewModel
 import app.phacteur.android.ui.theme.PhacteurTheme
@@ -29,6 +30,16 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         consumeIntent(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        NotificationHelper.onAppForeground(this)
+    }
+
+    override fun onStop() {
+        if (!isChangingConfigurations) NotificationHelper.onAppBackground(this)
+        super.onStop()
     }
 
     private fun consumeIntent(intent: Intent) {

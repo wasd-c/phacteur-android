@@ -16,6 +16,9 @@ import app.phacteur.android.data.MailCalendarEvent
 import app.phacteur.android.data.MailboxGroupDraft
 import app.phacteur.android.data.Dashboard
 import app.phacteur.android.data.EmailAccount
+import app.phacteur.android.data.EmailAccountAction
+import app.phacteur.android.data.MailboxProfileDraft
+import app.phacteur.android.data.presentation
 import app.phacteur.android.data.MailThread
 import app.phacteur.android.data.MailboxEmail
 import app.phacteur.android.data.MailboxGroup
@@ -28,6 +31,7 @@ import app.phacteur.android.data.User
 import app.phacteur.android.data.accountIds
 import app.phacteur.android.data.withDuplicateMetadata
 import app.phacteur.android.notifications.NotificationPreferences
+import app.phacteur.android.notifications.NotificationHelper
 import app.phacteur.android.notifications.PushRegistrationManager
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -91,6 +95,10 @@ data class PhacteurUiState(
     val contacts: List<Contact> = emptyList(),
     val contactSearch: String = "",
     val accounts: List<EmailAccount> = emptyList(),
+    val accountBusyId: Int? = null,
+    val accountErrorId: Int? = null,
+    val accountActionError: String? = null,
+    val accountProfileSavedVersion: Long = 0,
     val passkeys: List<Passkey> = emptyList(),
     val calendarEvents: List<MailCalendarEvent> = emptyList(),
     val calendarMonth: YearMonth = YearMonth.now(),
@@ -106,6 +114,7 @@ data class PhacteurUiState(
     val groupsLoadError: String? = null,
     val groupsActionError: String? = null,
     val groupsMutationVersion: Long = 0,
+    val createGroupRequested: Boolean = false,
     val composeDraft: ComposeDraft? = null,
     val notificationsEnabled: Boolean = false,
     val firebaseConfigured: Boolean = false,
@@ -190,11 +199,13 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
     private var mailboxRequestVersion = 0L
     private var mailboxNavigationVersion = 0L
     private var emailSelectionVersion = 0L
+    private var emailMetadataJob: Job? = null
     private var contactSearchJob: Job? = null
     private var calendarLoadJob: Job? = null
     private var calendarRequestVersion = 0L
     private var groupsLoadJob: Job? = null
     private var groupsRequestVersion = 0L
+    private var accountActionJob: Job? = null
     private var sessionVersion = 0L
     private var conversationsLoadJob: Job? = null
     private var conversationsRequestVersion = 0L
@@ -251,11 +262,13 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
 
     fun navigate(destination: Destination) {
         emailSelectionVersion++
+        emailMetadataJob?.cancel()
         threadSelectionVersion++
         threadLoadJob?.cancel()
         _state.update {
             it.copy(
                 destination = destination,
+                createGroupRequested = it.createGroupRequested && destination == Destination.GROUPS,
                 selectedEmail = null,
                 selectedThread = null,
                 threadMessages = emptyList(),
@@ -265,6 +278,82 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun refresh() = refreshDestination(_state.value.destination, force = true)
+
+    fun requestCreateGroup() {
+        navigate(Destination.GROUPS)
+        _state.update { it.copy(createGroupRequested = true) }
+    }
+
+    fun consumeCreateGroupRequest() {
+        _state.update { it.copy(createGroupRequested = false) }
+    }
+
+    fun synchronizeAccount(accountId: Int) = accountAction(accountId, EmailAccountAction.SYNC) { account, session ->
+        api.synchronizeAccount(account.id)
+        refreshAccountIdentities(session)
+        _state.update { it.copy(message = "Les messages de ${account.email} ont été relevés") }
+    }
+
+    fun renewGmailReception(accountId: Int) = accountAction(accountId, EmailAccountAction.RENEW_GMAIL_RECEPTION) { account, session ->
+        api.renewGmailReception(account.id)
+        refreshAccountIdentities(session)
+        _state.update { it.copy(message = "La réception Gmail est réactivée pour ${account.email}") }
+    }
+
+    fun saveAccountProfile(accountId: Int, draft: MailboxProfileDraft) {
+        draft.validationError()?.let { message ->
+            _state.update { it.copy(accountErrorId = accountId, accountActionError = message) }
+            return
+        }
+        accountAction(accountId, EmailAccountAction.EDIT_PROFILE) { account, session ->
+            val updated = api.updateAccountProfile(account, draft)
+            _state.update { current ->
+                if (sessionVersion != session) return@update current
+                current.copy(
+                    accounts = current.accounts.map { existing ->
+                        if (existing.id == account.id) existing.copy(
+                            displayName = updated.displayName, replyTo = updated.replyTo, avatarUrl = updated.avatarUrl,
+                        ) else existing
+                    },
+                    accountProfileSavedVersion = current.accountProfileSavedVersion + 1,
+                    message = "Identité de la boîte enregistrée",
+                )
+            }
+        }
+    }
+
+    private fun accountAction(accountId: Int, action: EmailAccountAction, operation: suspend (EmailAccount, Long) -> Unit) {
+        if (_state.value.user == null || _state.value.accountBusyId != null) return
+        val account = _state.value.accounts.firstOrNull { it.id == accountId } ?: return
+        if (action !in account.presentation().actions) return
+        val session = sessionVersion
+        _state.update { it.copy(accountBusyId = accountId, accountErrorId = null, accountActionError = null) }
+        accountActionJob = viewModelScope.launch {
+            try {
+                operation(account, session)
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                if (sessionVersion == session) {
+                    if (error is ApiException && error.statusCode == 401) handleActionError(error)
+                    else _state.update { it.copy(accountErrorId = accountId, accountActionError = when {
+                        error is ApiException && error.statusCode == 423 -> "Cette boîte nécessite le coffre de messagerie sur le site."
+                        error is ApiException && error.statusCode == 403 -> "Vous n’avez plus accès à cette boîte. Actualisez vos comptes."
+                        error is ApiException && error.statusCode in setOf(400, 404) -> "Vérifiez la connexion et les réglages de cette boîte sur le site."
+                        else -> "Impossible de terminer cette action. Réessayez dans un instant."
+                    }) }
+                }
+            } finally {
+                _state.update { if (sessionVersion == session) it.copy(accountBusyId = null) else it }
+            }
+        }
+    }
+
+    private suspend fun refreshAccountIdentities(session: Long) {
+        if (sessionVersion != session) throw CancellationException("Account session changed")
+        val accounts = api.emailAccounts()
+        if (sessionVersion != session) throw CancellationException("Account session changed")
+        _state.update { it.copy(accounts = accounts) }
+    }
 
     fun setConversationScope(scope: MailboxScope) {
         if (_state.value.mailboxScope == scope) return
@@ -475,8 +564,10 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
         if (cancelJobs) {
             mailboxSearchJob?.cancel()
             mailboxLoadJob?.cancel()
+            emailMetadataJob?.cancel()
             calendarLoadJob?.cancel()
             groupsLoadJob?.cancel()
+            accountActionJob?.cancel()
             conversationsLoadJob?.cancel()
             contactSearchJob?.cancel()
             threadLoadJob?.cancel()
@@ -535,15 +626,40 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun selectEmail(email: MailboxEmail?) {
-        emailSelectionVersion++
+        val selection = ++emailSelectionVersion
+        emailMetadataJob?.cancel()
         _state.update { it.copy(selectedEmail = email) }
         if (email?.status == "UNREAD") updateEmailStatus(email, "READ", closeAfter = false)
+        if (email == null) return
+        val session = sessionVersion
+        emailMetadataJob = viewModelScope.launch {
+            try {
+                val source = api.email(email.id)
+                check(source.id == email.id)
+                _state.update { current ->
+                    val selected = current.selectedEmail
+                    if (sessionVersion != session || selection != emailSelectionVersion || selected?.id != email.id) current
+                    else current.copy(selectedEmail = selected.copy(
+                        metadata = source.metadata,
+                        senderName = source.senderName ?: selected.senderName,
+                        direction = source.direction.takeIf { it != "UNKNOWN" } ?: selected.direction,
+                    ))
+                }
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                if (sessionVersion == session && selection == emailSelectionVersion) {
+                    if (error is ApiException && error.statusCode == 401) handleActionError(error)
+                    else _state.update { it.copy(error = "Certaines informations du mail n’ont pas pu être chargées.") }
+                }
+            }
+        }
     }
 
     fun updateEmailStatus(email: MailboxEmail, status: String, closeAfter: Boolean = true) = launchAction {
         val session = sessionVersion
         api.updateEmailStatus(email.statusUpdateIds, status)
         if (sessionVersion != session) return@launchAction
+        NotificationHelper.onEmailStatusesChanged(getApplication(), email.statusUpdateIds, status)
         val current = _state.value
         val updated = current.applyEmailStatus(email.statusUpdateIds, status, closeAfter)
         _state.value = updated
@@ -567,7 +683,10 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
             try {
                 val messages = api.threadMessages(thread.id, _state.value.emails)
                 if (sessionVersion != session || _state.value.user?.id != userId || selection != threadSelectionVersion) return@launch
-                if (thread.hasUnread) api.markThreadRead(thread.id, unread = false)
+                if (thread.hasUnread) {
+                    api.markThreadRead(thread.id, unread = false)
+                    if (sessionVersion == session) NotificationHelper.onEmailStatusesChanged(getApplication(), messages.map { it.id }, "READ")
+                }
                 _state.update { current ->
                     if (sessionVersion != session || selection != threadSelectionVersion) current else current.copy(
                         threadMessages = if (current.selectedThread?.id == thread.id) messages else current.threadMessages,
@@ -608,6 +727,8 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
         val session = sessionVersion
         api.archiveThread(thread.id)
         if (sessionVersion != session) return@launchAction
+        val affectedIds = (_state.value.threadMessages.map { it.id } + _state.value.emails.filter { it.threadId == thread.id }.map { it.id }).distinct()
+        NotificationHelper.onEmailStatusesChanged(getApplication(), affectedIds, "ARCHIVED")
         _state.update {
             it.copy(
                 threads = it.threads.filterNot { item -> item.id == thread.id },
@@ -827,8 +948,12 @@ class PhacteurViewModel(application: Application) : AndroidViewModel(application
         val session = sessionVersion
         when (destination) {
             Destination.DASHBOARD -> if (force || _state.value.dashboard == null) launchAction(refreshing = true) {
-                val dashboard = api.dashboard()
-                _state.update { if (sessionVersion == session) it.copy(dashboard = dashboard) else it }
+                val (dashboard, accounts) = coroutineScope {
+                    val dashboardTask = async { api.dashboard() }
+                    val accountsTask = async { api.emailAccounts() }
+                    dashboardTask.await() to accountsTask.await()
+                }
+                _state.update { if (sessionVersion == session) it.copy(dashboard = dashboard, accounts = accounts) else it }
             }
             Destination.MAILBOX -> if (force || _state.value.emails.isEmpty() &&
                 !_state.value.mailboxLoading && !_state.value.mailboxRefreshing && !_state.value.loadingMore

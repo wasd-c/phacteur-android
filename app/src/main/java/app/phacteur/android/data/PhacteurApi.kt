@@ -228,17 +228,7 @@ class PhacteurApi(
                     attachments = emptyList(),
                 )
             },
-            accounts = response.getJSONArray("accounts").objectList().map { account ->
-                EmailAccount(
-                    id = account.getInt("id"),
-                    email = account.optString("email"),
-                    provider = account.optString("provider"),
-                    isPrimary = false,
-                    isActive = account.optBoolean("isActive"),
-                    canSend = account.optBoolean("isActive"),
-                    syncStatus = account.optString("syncStatus", "IDLE"),
-                )
-            },
+            accounts = response.getJSONArray("accounts").objectList().map(::parseEmailAccount),
         )
     }
 
@@ -246,6 +236,39 @@ class PhacteurApi(
         .getJSONArray("emailAccounts")
         .objectList()
         .map(::parseEmailAccount)
+
+    suspend fun synchronizeAccount(accountId: Int) {
+        require(accountId > 0)
+        requestObject("api/email-accounts/$accountId/sync", method = "POST")
+    }
+
+    suspend fun renewGmailReception(accountId: Int) {
+        require(accountId > 0)
+        requestObject(
+            "api/webhooks/gmail/watch", method = "POST",
+            jsonBody = JSONObject().put("emailAccountId", accountId.toString()),
+        )
+    }
+
+    suspend fun updateAccountProfile(account: EmailAccount, draft: MailboxProfileDraft): EmailAccount {
+        require(account.id > 0)
+        require(draft.validationError() == null)
+        val value = draft.normalized()
+        // The server resets omitted identity fields. Preserve the stored avatar.
+        val updated = requestObject(
+            "api/email-accounts/${account.id}", method = "PATCH",
+            jsonBody = JSONObject()
+                .put("displayName", value.displayName.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+                .put("replyTo", value.replyTo.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+                .put("avatarUrl", account.avatarUrl ?: JSONObject.NULL),
+        ).getJSONObject("account")
+        check(updated.getString("id").toIntOrNull() == account.id)
+        return account.copy(
+            displayName = updated.optionalString("displayName"),
+            replyTo = updated.optionalString("replyTo"),
+            avatarUrl = updated.optionalString("avatarUrl"),
+        )
+    }
 
     suspend fun mailboxGroups(): List<MailboxGroup> = requestObject("api/mailbox-groups")
         .getJSONArray("mailboxGroups")

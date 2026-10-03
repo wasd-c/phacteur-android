@@ -11,10 +11,13 @@ this source tree.
 
 ## Release status
 
+[Download the latest Android release](https://github.com/wasd-c/phacteur-android/releases/latest).
+
 The downloadable APK is a debug preview for sideload testing on Android 9 and
 newer. It is debug-signed and is not a Play Store or production build. Version
-1.1.0 (build 5) adds native mailbox-group management and the mail calendar, with
-Phacteur's web identity and swipe refresh. Opt-in Firebase notifications require
+1.1.1 (build 6) uses the current Phacteur logo, provider-aware account settings,
+mail actions and expandable sender details. It retains native mailbox groups,
+the mail calendar and swipe refresh. Opt-in Firebase notifications require
 the matching server routes, mobile delivery migration, and server Firebase
 configuration to be deployed. Background email checks remain available without
 Firebase; Android schedules these roughly every 15 minutes and may delay them
@@ -23,10 +26,16 @@ signing identity. A later production-signed build can require reinstalling the a
 
 ## Included
 
-- a mailbox-first Compose UI with Phacteur’s web colors, Origami identity,
+- a mailbox-first Compose UI with Phacteur’s web colors and current logo,
   compact message rows, and phone/tablet split views;
 - searchable mailbox and group selection, using the same accounts and groups
-  as the website, with each message’s receiving identity visible;
+  as the website, groups before individual mailboxes and a direct group-creation action;
+- provider-aware account names and readable connection states, native sender
+  identity editing, Gmail reception renewal and manual external-IMAP fetch;
+- local copy-code, sign-in-link and meeting actions, with expiry checks and
+  HTTPS destinations opening in the browser without Phacteur credentials;
+- expandable sender details and declared mail-header domains, with public
+  encryption keys abbreviated before opening their full copyable value;
 - duplicate counts matching the website, with read/archive/delete actions
   applied to every copy included in the selected mailbox scope;
 - native group creation, editing and deletion, including mailbox order, colors,
@@ -49,6 +58,8 @@ signing identity. A later production-signed build can require reinstalling the a
 - native Credential Manager passkey sign-in and passkey enrollment, with a
   browser sign-in action after provider rejection (cancellation remains silent);
 - privacy-safe FCM data notifications and a WorkManager catch-up path;
+- a persistent counter of newly arrived unread messages since the last app
+  opening, cleared on foreground entry and updated on read/archive/delete;
 - exact notification deep links that reload a user-owned email by ID;
 - Android Keystore-backed encryption for the session, passkey challenge
   cookies, PKCE verifier, and Firebase Installation ID.
@@ -57,6 +68,11 @@ Provider setup, private relays and 2FA management open their web screens;
 Drive and API-key management remain on the website. The browser has a separate cookie jar and may ask
 the user to sign in again. Attachments are listed but are not downloaded by
 this first native release.
+
+The launcher decides whether a notification badge shows a number or a dot and
+which color it uses. Old messages have no captured authentication headers or
+sender encryption keys; the app labels missing values rather than inferring them.
+Header domains are declarations, not a claim of verified sender identity.
 
 ## Build
 

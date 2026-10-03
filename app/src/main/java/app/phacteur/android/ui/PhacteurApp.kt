@@ -305,6 +305,7 @@ fun PhacteurApp(
                     when (state.destination) {
                         Destination.DASHBOARD -> DashboardScreen(
                             dashboard = state.dashboard,
+                            accounts = state.accounts,
                             userName = state.user!!.displayName,
                             onAccountClick = { account ->
                                 viewModel.setMailboxScope(app.phacteur.android.data.MailboxScope.Account(account.id))
@@ -332,6 +333,7 @@ fun PhacteurApp(
                             hasMore = state.mailboxHasMore,
                             wide = wide,
                             onScopeChange = viewModel::setMailboxScope,
+                            onCreateGroup = viewModel::requestCreateGroup,
                             onCategory = viewModel::setMailboxCategory,
                             onRefresh = viewModel::refresh,
                             onSearch = viewModel::searchMailbox,
@@ -367,6 +369,7 @@ fun PhacteurApp(
                             loading = state.conversationsLoading,
                             loadError = state.conversationsError,
                             onScopeChange = viewModel::setConversationScope,
+                            onCreateGroup = viewModel::requestCreateGroup,
                             onReply = { thread ->
                                 val ownEmails = (state.accounts.map { it.email } + state.user!!.email)
                                     .map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
@@ -412,6 +415,8 @@ fun PhacteurApp(
                             loadError = state.groupsLoadError,
                             actionError = state.groupsActionError,
                             mutationVersion = state.groupsMutationVersion,
+                            createRequested = state.createGroupRequested,
+                            onCreateRequestHandled = viewModel::consumeCreateGroupRequest,
                             onRefresh = viewModel::refresh,
                             onSave = viewModel::saveMailboxGroup,
                             onDelete = viewModel::deleteMailboxGroup,
@@ -435,9 +440,18 @@ fun PhacteurApp(
                             onAddPasskey = { viewModel.registerPasskey(activity) },
                             onManageGroups = { viewModel.navigate(Destination.GROUPS) },
                             onDashboard = { viewModel.navigate(Destination.DASHBOARD) },
+                            accountBusyId = state.accountBusyId,
+                            accountErrorId = state.accountErrorId,
+                            accountActionError = state.accountActionError,
+                            accountProfileSavedVersion = state.accountProfileSavedVersion,
+                            onOpenAccount = { viewModel.setMailboxScope(app.phacteur.android.data.MailboxScope.Account(it.id)) },
+                            onSyncAccount = viewModel::synchronizeAccount,
+                            onRenewGmail = viewModel::renewGmailReception,
+                            onSaveAccountProfile = viewModel::saveAccountProfile,
                             onOpenWeb = { path ->
                                 val uri = Uri.parse(BuildConfig.PHACTEUR_BASE_URL).buildUpon()
-                                    .appendEncodedPath(path)
+                                    .appendEncodedPath(path.substringBefore('#'))
+                                    .fragment(path.substringAfter('#', "").takeIf(String::isNotBlank))
                                     .build()
                                 context.startActivity(Intent(Intent.ACTION_VIEW, uri))
                             },

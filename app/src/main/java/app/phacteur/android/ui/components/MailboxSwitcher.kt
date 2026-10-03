@@ -18,15 +18,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AllInbox
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -71,6 +72,7 @@ fun MailboxScopeSelector(
     groups: List<MailboxGroup>,
     onScopeChange: (MailboxScope) -> Unit,
     modifier: Modifier = Modifier,
+    onCreateGroup: () -> Unit = {},
 ) {
     var showSelector by rememberSaveable { mutableStateOf(false) }
     val activeAccounts = remember(accounts) { accounts.filter { it.isActive } }
@@ -115,7 +117,7 @@ fun MailboxScopeSelector(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ScopeMark(scope, selectedColor, prominent = true)
+            ScopeMark(scope, selectedColor, prominent = true, account = selectedAccount)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     title,
@@ -156,6 +158,10 @@ fun MailboxScopeSelector(
                     if (selected != scope) onScopeChange(selected)
                 },
                 onClose = { showSelector = false },
+                onCreateGroup = {
+                    showSelector = false
+                    onCreateGroup()
+                },
             )
         }
     }
@@ -168,6 +174,7 @@ private fun MailboxScopeChoices(
     groups: List<MailboxGroup>,
     onSelect: (MailboxScope) -> Unit,
     onClose: () -> Unit,
+    onCreateGroup: () -> Unit,
 ) {
     var search by rememberSaveable { mutableStateOf("") }
     val query = search.trim()
@@ -231,30 +238,7 @@ private fun MailboxScopeChoices(
                     onSelect = onSelect,
                 )
             }
-            item(key = "accounts-header") { ScopeSectionTitle("Mes boîtes", matchingAccounts.size) }
-            if (matchingAccounts.isEmpty()) {
-                item(key = "accounts-empty") {
-                    ScopeEmptyLabel(if (query.isBlank()) "Aucune boîte active" else "Aucune boîte correspondante")
-                }
-            }
-            items(matchingAccounts, key = { "account-${it.id}" }) { account ->
-                ScopeChoiceRow(
-                    scope = MailboxScope.Account(account.id),
-                    title = mailboxTitle(account),
-                    subtitle = account.email,
-                    color = mailboxIdentityColor(accounts.indexOf(account)),
-                    selected = scope == MailboxScope.Account(account.id),
-                    needsAttention = account.syncStatus == "ERROR",
-                    onSelect = onSelect,
-                )
-            }
-            item(key = "groups-divider") {
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                )
-            }
-            item(key = "groups-header") { ScopeSectionTitle("Mes groupes", matchingGroups.size) }
+            item(key = "groups-header") { ScopeSectionTitle("Groupes", matchingGroups.size, onCreateGroup) }
             if (matchingGroups.isEmpty()) {
                 item(key = "groups-empty") {
                     ScopeEmptyLabel(if (query.isBlank()) "Aucun groupe pour le moment" else "Aucun groupe correspondant")
@@ -270,6 +254,30 @@ private fun MailboxScopeChoices(
                     onSelect = onSelect,
                 )
             }
+            item(key = "accounts-divider") {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
+            item(key = "accounts-header") { ScopeSectionTitle("Mes boîtes", matchingAccounts.size) }
+            if (matchingAccounts.isEmpty()) {
+                item(key = "accounts-empty") {
+                    ScopeEmptyLabel(if (query.isBlank()) "Aucune boîte active" else "Aucune boîte correspondante")
+                }
+            }
+            items(matchingAccounts, key = { "account-${it.id}" }) { account ->
+                ScopeChoiceRow(
+                    scope = MailboxScope.Account(account.id),
+                    title = mailboxTitle(account),
+                    subtitle = account.email,
+                    color = mailboxIdentityColor(accounts.indexOf(account)),
+                    selected = scope == MailboxScope.Account(account.id),
+                    needsAttention = account.syncStatus == "ERROR",
+                    onSelect = onSelect,
+                    account = account,
+                )
+            }
         }
     }
 }
@@ -283,6 +291,7 @@ private fun ScopeChoiceRow(
     selected: Boolean,
     onSelect: (MailboxScope) -> Unit,
     needsAttention: Boolean = false,
+    account: EmailAccount? = null,
 ) {
     Row(
         modifier = Modifier
@@ -295,7 +304,7 @@ private fun ScopeChoiceRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ScopeMark(scope, color)
+        ScopeMark(scope, color, account = account)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 title,
@@ -335,7 +344,7 @@ private fun ScopeChoiceRow(
 }
 
 @Composable
-private fun ScopeMark(scope: MailboxScope, color: Color, prominent: Boolean = false) {
+private fun ScopeMark(scope: MailboxScope, color: Color, prominent: Boolean = false, account: EmailAccount? = null) {
     Box(
         modifier = Modifier
             .size(if (prominent) 38.dp else 28.dp)
@@ -345,7 +354,11 @@ private fun ScopeMark(scope: MailboxScope, color: Color, prominent: Boolean = fa
     ) {
         when (scope) {
             MailboxScope.All -> Icon(Icons.Outlined.AllInbox, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
-            is MailboxScope.Account -> Box(Modifier.size(10.dp).clip(CircleShape).background(color))
+            is MailboxScope.Account -> if (account != null) {
+                AccountProviderMark(account, Modifier.size(if (prominent) 32.dp else 28.dp))
+            } else {
+                Icon(Icons.Outlined.MailOutline, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+            }
             is MailboxScope.Group -> if (prominent) {
                 Icon(Icons.Outlined.Layers, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
             } else {
@@ -356,7 +369,7 @@ private fun ScopeMark(scope: MailboxScope, color: Color, prominent: Boolean = fa
 }
 
 @Composable
-private fun ScopeSectionTitle(title: String, count: Int) {
+private fun ScopeSectionTitle(title: String, count: Int, onCreateGroup: (() -> Unit)? = null) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp).semantics { heading() },
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -370,6 +383,12 @@ private fun ScopeSectionTitle(title: String, count: Int) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(count.toString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (onCreateGroup != null) {
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onCreateGroup, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Outlined.Add, contentDescription = "Créer un groupe", modifier = Modifier.size(20.dp))
+            }
+        }
     }
 }
 

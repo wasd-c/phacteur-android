@@ -38,6 +38,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -45,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.phacteur.android.data.EmailAccount
+import app.phacteur.android.data.MailboxProfileDraft
 import app.phacteur.android.BuildConfig
 import app.phacteur.android.data.Passkey
 import app.phacteur.android.data.User
@@ -66,7 +72,23 @@ fun SettingsScreen(
     onOpenWeb: (String) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
+    accountBusyId: Int? = null,
+    accountErrorId: Int? = null,
+    accountActionError: String? = null,
+    accountProfileSavedVersion: Long = 0,
+    onOpenAccount: (EmailAccount) -> Unit = {},
+    onSyncAccount: (Int) -> Unit = {},
+    onRenewGmail: (Int) -> Unit = {},
+    onSaveAccountProfile: (Int, MailboxProfileDraft) -> Unit = { _, _ -> },
 ) {
+    var editingAccountId by rememberSaveable(user.id) { mutableStateOf<Int?>(null) }
+    var observedProfileVersion by rememberSaveable(user.id) { mutableStateOf(accountProfileSavedVersion) }
+    LaunchedEffect(accountProfileSavedVersion) {
+        if (observedProfileVersion != accountProfileSavedVersion) {
+            observedProfileVersion = accountProfileSavedVersion
+            editingAccountId = null
+        }
+    }
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(20.dp),
@@ -154,23 +176,27 @@ fun SettingsScreen(
             }
         }
 
-        item { SectionTitle("Comptes email") }
+        item { SectionTitle("Mes boîtes mail") }
         items(accounts, key = EmailAccount::id) { account ->
-            SettingRow(
-                icon = Icons.Outlined.AlternateEmail,
-                title = account.email,
-                subtitle = "${account.provider} · ${if (account.isActive) account.syncStatus else "Inactif"}",
+            AccountSettingsCard(
+                account = account, busy = accountBusyId == account.id, actionsEnabled = accountBusyId == null,
+                error = accountActionError.takeIf { accountErrorId == account.id },
+                onOpenInbox = { onOpenAccount(account) },
+                onEditProfile = { editingAccountId = account.id },
+                onSync = { onSyncAccount(account.id) },
+                onRenewGmail = { onRenewGmail(account.id) },
+                onOpenWeb = onOpenWeb,
             )
         }
         item {
             OutlinedButton(
-                onClick = { onOpenWeb("my/settings") },
+                onClick = { onOpenWeb("my/settings#mailboxes") },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
             ) {
                 Icon(Icons.Outlined.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Gérer les fournisseurs sur le site")
+                Text("Ajouter une boîte mail sur le site")
             }
         }
 
@@ -249,6 +275,12 @@ fun SettingsScreen(
             )
         }
         item { Spacer(Modifier.height(24.dp)) }
+    }
+    accounts.firstOrNull { it.id == editingAccountId }?.let { account ->
+        AccountProfileDialog(account = account, saving = accountBusyId == account.id,
+            serverError = accountActionError.takeIf { accountErrorId == account.id },
+            onDismiss = { editingAccountId = null },
+            onSave = { onSaveAccountProfile(account.id, it) })
     }
 }
 

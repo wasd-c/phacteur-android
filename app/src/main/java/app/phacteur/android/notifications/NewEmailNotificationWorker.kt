@@ -28,7 +28,10 @@ class NewEmailNotificationWorker(context: Context, params: WorkerParameters) : C
         return try {
             val email = AppGraph.from(applicationContext).api.notificationEmail(emailId)
             if (email.id != emailId) return Result.failure()
-            NotificationHelper.showNewEmail(applicationContext, email.id, email.threadId, generation)
+            NotificationHelper.showNewEmail(
+                applicationContext, email.id, email.threadId, generation,
+                receivedAt = email.receivedAt,
+            )
             Result.success()
         } catch (error: ApiException) {
             when {
